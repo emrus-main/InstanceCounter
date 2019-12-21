@@ -63,13 +63,11 @@ function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 	end
 	
 	if (msg == ERR_LEFT_GROUP_YOU) then
-		self.ClearOldInstances();
 		self.ResetInstancesForCharacter(UnitName('player'))
 	end
 
 	instanceName = string.match(msg, '(.*) has been reset')
 	if (instanceName ~= nil) then
-		self.ClearOldInstances();
 		self.ResetInstanceByName(instanceName)
 		if (IsInGroup()) then
 			self.Broadcast(instanceName)
@@ -83,7 +81,6 @@ function InstanceCounter:CHAT_MSG_ADDON(prefix, msg, type, sender)
 
 	instanceName = string.match(msg, ADDON_MESSAGE_RESET_SPECIFIC .. '(.+)')
 	if (instanceName ~= nil) then
-		self.ClearOldInstances();
 		self.ResetInstanceByName(instanceName)
 	end
 end
@@ -94,12 +91,7 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 	if ( self.sinceLastUpdate >= 5 ) then
 		self.sinceLastUpdate = 0;
 
-		if (# db.List >= 5) then
-			self.ClearOldInstances();					
-			if (# db.List <= 4) then
-				print(prefix .. C.YELLOW .. L['OPEN_INSTANCES']);
-			end
-		end
+		self.ClearOldAndPrint()
 		
 		if (not IsInInstance()) then return end
 		
@@ -128,18 +120,6 @@ function InstanceCounter.Broadcast(instanceName)
 	end
 end
 
-
-function InstanceCounter.InstanceCountChanged()
-	if (# db.List >= 1) then
-		self:RegisterEvent('CHAT_MSG_SYSTEM');
-		if (# db.List >= 5) then
-			self.PrintTimeUntilReset()
-		end
-	else
-		self:UnregisterEvent('CHAT_MSG_SYSTEM');
-	end
-end
-
 function InstanceCounter.AddCurrentInstance()
 	local name, instanceType, difficultyID = GetInstanceInfo();
 	if ((instanceType ~= "party") and (instanceType ~= "raid")) then return end
@@ -150,8 +130,11 @@ function InstanceCounter.AddCurrentInstance()
 		local isSaved = self.IsPlayerSavedToInstance(name, difficultyID);
 		self.AddInstance(name, instanceType, difficultyID, isSaved);
 	end
-	
-	self.InstanceCountChanged()
+
+	self:RegisterEvent('CHAT_MSG_SYSTEM');
+	if (# db.List >= 5) then
+		self.PrintTimeUntilReset()
+	end
 end
 
 function InstanceCounter.AddInstance(name, type, difficulty, saved)
@@ -176,18 +159,26 @@ end
 
 function InstanceCounter.ClearInstances()
 	db.List = {};
+	self:UnregisterEvent('CHAT_MSG_SYSTEM');
 end
 
 function InstanceCounter.ClearOldInstances()
-	local t = time();
+	local t = time()
+	local removed = false
 	
 	for i = # db.List, 1, -1 do
 		if (t - db.List[i].last_seen > 3600) then
-			table.remove(db.List, i);
+			table.remove(db.List, i)
+			removed = true
 		end
 	end
-	
+
 	self.SortInstances();
+
+	if # db.List == 0 then
+		self:UnregisterEvent('CHAT_MSG_SYSTEM');
+	end
+	return removed
 end
 
 function InstanceCounter.IsInstanceInList(name, type, difficulty)
@@ -271,6 +262,12 @@ end
 
 
 ------ PRINT ------
+
+function InstanceCounter.ClearOldAndPrint()
+	if self.ClearOldInstances() and # db.List == 4 then
+		print(prefix .. C.YELLOW .. L['OPEN_INSTANCES']);
+	end
+end
 
 function InstanceCounter.PrintTimeUntilReset()
 	if (# db.List > 0) then
