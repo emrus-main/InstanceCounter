@@ -28,10 +28,12 @@ function InstanceCounter:ADDON_LOADED(frame)
 	self:UnregisterEvent('ADDON_LOADED');
 	self.ADDON_LOADED = nil;
 	
+	-- Init DB
 	if (InstanceCounterDB == nil) then InstanceCounterDB = {} end
 	if (InstanceCounterDB.List == nil) then InstanceCounterDB.List = {} end
 	db = InstanceCounterDB;
 	
+	-- Register Events
 	self.ClearOldInstances();
 	self:RegisterEvent('PLAYER_ENTERING_WORLD');
 	self:RegisterEvent('CHAT_MSG_ADDON');
@@ -66,11 +68,11 @@ end
 
 function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 	if (msg == TRANSFER_ABORT_TOO_MANY_INSTANCES) then
-		self.ClearOldInstances();
-		print(prefix .. C.YELLOW .. L['TIME_REMAINING'] .. self.TimeRemaining(db.List[1].last_seen));
+		self.ClearOldInstances()
+		self.PrintTimeUntilReset()
 	end
 	
-	if (msg == ERR_LEFT_GROUP_YOU ) then
+	if (msg == ERR_LEFT_GROUP_YOU) then
 		self.ClearOldInstances();
 		self.ResetInstancesForCharacter(UnitName('player'))
 	end
@@ -95,10 +97,10 @@ function InstanceCounter:CHAT_MSG_ADDON(prefix, msg, type, sender)
 	if(prefix ~= ADDON_MESSAGE_PREFIX) then return end
 	if(type ~= 'PARTY') then return end
 
-	match, arg = string.match(msg, '(' .. ADDON_MESSAGE_RESET_SPECIFIC .. ')(.+)')
-	if (match ~= nil and arg ~= nil) then
+	instanceName = string.match(msg, ADDON_MESSAGE_RESET_SPECIFIC .. '(.+)')
+	if (instanceName ~= nil) then
 		self.ClearOldInstances();
-		self.ResetInstanceByName(arg)
+		self.ResetInstanceByName(instanceName)
 	end
 end
 
@@ -237,6 +239,13 @@ function InstanceCounter.ResetInstanceByName(instance)
 	end
 end
 
+function InstanceCounter.OnResetInstances()
+	if (IsInInstance()) then return end
+	if (not IsInGroup() or UnitIsGroupLeader('player')) then
+		self.FlagInstancesForReset()
+	end		
+end
+
 
 function InstanceCounter.SortInstances()
 	table.sort(db.List, function(a, b) return a.time < b.time end);
@@ -254,16 +263,7 @@ function InstanceCounter.TimeRemaining(t)
 	return neg .. string.format("%.2d:%.2d", floor(t/60), t%60)
 end
 
-function InstanceCounter.OnResetInstances()
-	if (IsInInstance()) then return end
-	if (not IsInGroup() or UnitIsGroupLeader('player')) then
-		self.FlagInstancesForReset()
-	end		
-end
 
-hooksecurefunc('ResetInstances', function(...)
-	self.OnResetInstances();
-end)
 
 ------ PRINT ------
 
@@ -321,6 +321,11 @@ function InstanceCounter.PrintOptions()
 end
 
 ------
+
+
+hooksecurefunc('ResetInstances', function(...)
+	self.OnResetInstances();
+end)
 
 SlashCmdList['InstanceCounter'] = function(txt)
 	local txt, arg1, arg2 = strsplit(" ", txt, 3)
