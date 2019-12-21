@@ -63,18 +63,16 @@ end
 function InstanceCounter:PLAYER_ENTERING_WORLD()
 	self.RemoveOldInstances();
 	
-	local inInstance, instanceType = IsInInstance();
-	if (not inInstance or ((instanceType ~= 'party') and (instanceType ~= 'raid'))) then 
-		return 
-	end
-	
-	local name, type, difficulty = GetInstanceInfo();
+	if (not IsInInstance()) then return end
 		
-	if ((type == 'party') and (difficulty == 1)) then
-		self.AddInstanceToList(name, type, difficulty, false);		
+	local name, instanceType, difficultyID = GetInstanceInfo();
+	if ((instanceType ~= "party") and (instanceType ~= "raid")) then return end
+
+	if ((instanceType == 'party') and (difficultyID == 1)) then
+		self.AddInstanceToList(name, instanceType, difficultyID, false);		
 	else
-		local saved = self.IsInstanceSaved(name, difficulty);
-		self.AddInstanceToList(name, type, difficulty, saved);
+		local isSaved = self.IsInstanceSaved(name, difficultyID);
+		self.AddInstanceToList(name, instanceType, difficultyID, isSaved);
 	end
 	
 	self.InstanceCountChanged()
@@ -91,10 +89,10 @@ function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 		self.ResetInstancesForCharacter(UnitName('player'))
 	end
 
-	match = string.match(msg, '(.*) has been reset')
-	if (match ~= nil) then
+	instanceName = string.match(msg, '(.*) has been reset')
+	if (instanceName ~= nil) then
 		self.RemoveOldInstances();
-		self.ResetInstance(match)
+		self.ResetInstanceByName(instanceName)
 		if (IsInGroup()) then
 			success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_RESET_SPECIFIC .. match, 'PARTY')
 			if not success then
@@ -102,7 +100,7 @@ function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 			end
 		end
 		if (# db.List >= 5) then
-			self.GetTimeRemaining()
+			self.PrintTimeUntilReset()
 		end
 	end
 end
@@ -114,7 +112,7 @@ function InstanceCounter:CHAT_MSG_ADDON(prefix, msg, type, sender)
 	match, arg = string.match(msg, '(' .. ADDON_MESSAGE_RESET_SPECIFIC .. ')(.+)')
 	if (match ~= nil and arg ~= nil) then
 		self.RemoveOldInstances();
-		self.ResetInstance(arg)
+		self.ResetInstanceByName(arg)
 	end
 end
 
@@ -123,7 +121,7 @@ function InstanceCounter.ClearList()
 	print(prefix .. C.YELLOW .. L['LIST_CLEARED']);
 end
 
-function InstanceCounter.GetTimeRemaining()
+function InstanceCounter.PrintTimeUntilReset()
 	if (# db.List > 0) then
 		if (# db.List >= 5) then
 			print(prefix .. C.YELLOW .. L['TIME_REMAINING'] .. self.TimeRemaining(db.List[1].last_seen));
@@ -152,20 +150,18 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 			end
 		end
 		
-		local inInstance, instanceType = IsInInstance();
-		if (not inInstance or ((instanceType ~= 'party') and (instanceType ~= 'raid'))) then 
-			return 
-		end
+		if (not IsInInstance()) then return end
 		
-		local name, type, difficulty = GetInstanceInfo();
+		local name, instanceType, difficultyID = GetInstanceInfo();
+		if ((instanceType ~= "party") and (instanceType ~= "raid")) then return end
 
 		local character = UnitName('player')
 
 		for i = 1, # db.List do
 			if (db.List[i].reset == false and 
 				db.List[i].name == name and 
-				db.List[i].type == type and 
-				db.List[i].difficulty == difficulty and 
+				db.List[i].type == instanceType and 
+				db.List[i].difficulty == difficultyID and 
 				db.List[i].character == character) then
 				db.List[i].last_seen = time();
 			end
@@ -219,7 +215,7 @@ function InstanceCounter.InstanceCountChanged()
 	if (# db.List >= 1) then
 		self:RegisterEvent('CHAT_MSG_SYSTEM');
 		if (# db.List >= 5) then
-			self.GetTimeRemaining()
+			self.PrintTimeUntilReset()
 		end
 	else
 		self:UnregisterEvent('CHAT_MSG_SYSTEM');
@@ -300,7 +296,7 @@ function InstanceCounter.ResetInstancesForCharacter(playername)
 	end
 end
 
-function InstanceCounter.ResetInstance(instance)
+function InstanceCounter.ResetInstanceByName(instance)
 	for i = 1, # db.List do
 		if (db.List[i].name == instance) then
 			if not db.List[i].reset then			
@@ -348,7 +344,7 @@ SlashCmdList['InstanceCounter'] = function(txt)
 	elseif txt == L['CMD']['RESET']['CMD'] then
 		InstanceCounter.ManualReset()
 	elseif txt == L['CMD']['TIME']['CMD'] then
-		InstanceCounter.GetTimeRemaining()
+		InstanceCounter.PrintTimeUntilReset()
 	elseif txt == 'chat' then
 		InstanceCounter.PrintListChat(arg1, arg2)
 	else
