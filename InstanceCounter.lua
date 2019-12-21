@@ -215,7 +215,7 @@ function InstanceCounter.IsPlayerSavedToInstance(name, difficultyID)
 	return false;
 end
 
-function InstanceCounter.FlagInstancesForReset()
+function InstanceCounter.ResetInstancesForParty()
 	self.ResetInstancesForCharacter(UnitName('player'))
 
 	for groupindex = 1,MAX_PARTY_MEMBERS do
@@ -250,7 +250,7 @@ function InstanceCounter.OnResetInstances()
 	if IsInInstance() then return end
 
 	if not IsInGroup() or UnitIsGroupLeader('player') then
-		self.FlagInstancesForReset()
+		self.ResetInstancesForParty()
 	end		
 end
 
@@ -349,7 +349,7 @@ SlashCmdList['InstanceCounter'] = function(txt)
 	elseif txt == L['CMD']['PRINT']['CMD'] then
 		InstanceCounter.PrintInstances()
 	elseif txt == L['CMD']['RESET']['CMD'] then
-		InstanceCounter.FlagInstancesForReset()
+		InstanceCounter.ResetInstancesForParty()
 		print(prefix .. C.YELLOW .. L['MANUAL_RESET']);
 	elseif txt == L['CMD']['TIME']['CMD'] then
 		InstanceCounter.PrintTimeUntilReset()
