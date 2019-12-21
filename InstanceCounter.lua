@@ -66,22 +66,22 @@ function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 		self.ResetInstancesForCharacter(UnitName('player'))
 	end
 
-	instanceName = string.match(msg, '(.*) has been reset')
-	if (instanceName ~= nil) then
-		self.ResetInstanceByName(instanceName)
+	name = string.match(msg, '(.*) has been reset')
+	if (name ~= nil) then
+		self.ResetInstanceByName(name)
 		if (IsInGroup()) then
-			self.Broadcast(instanceName)
+			self.Broadcast(name)
 		end
 	end
 end
 
-function InstanceCounter:CHAT_MSG_ADDON(prefix, msg, type, sender)
+function InstanceCounter:CHAT_MSG_ADDON(prefix, msg, channel, sender)
 	if(prefix ~= ADDON_MESSAGE_PREFIX) then return end
-	if(type ~= 'PARTY') then return end
+	if(channel ~= 'PARTY') then return end
 
-	instanceName = string.match(msg, ADDON_MESSAGE_RESET_SPECIFIC .. '(.+)')
-	if (instanceName ~= nil) then
-		self.ResetInstanceByName(instanceName)
+	name = string.match(msg, ADDON_MESSAGE_RESET_SPECIFIC .. '(.+)')
+	if (name ~= nil) then
+		self.ResetInstanceByName(name)
 	end
 end
 
@@ -99,8 +99,8 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 	end
 end
 
-function InstanceCounter.Broadcast(instanceName)
-	success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_RESET_SPECIFIC .. instanceName, 'PARTY')
+function InstanceCounter.Broadcast(name)
+	success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_RESET_SPECIFIC .. name, 'PARTY')
 	if not success then
 		print(prefix .. C.RED .. L['MESSAGE_NOT_SENT'])
 	end
@@ -115,10 +115,10 @@ function InstanceCounter.UpdateTimeInInstance()
 	for i = 1, # db.List do
 		if (db.List[i].reset == false and 
 			db.List[i].name == name and 
-			db.List[i].type == instanceType and 
-			db.List[i].difficulty == difficultyID and 
+			db.List[i].instanceType == instanceType and 
+			db.List[i].difficultyID == difficultyID and 
 			db.List[i].character == character) then
-			db.List[i].last_seen = time();
+			db.List[i].lastSeen = time();
 		end
 	end	
 end
@@ -130,8 +130,8 @@ function InstanceCounter.AddCurrentInstance()
 	if ((instanceType == 'party') and (difficultyID == 1)) then
 		self.AddInstance(name, instanceType, difficultyID, false);		
 	else
-		local isSaved = self.IsPlayerSavedToInstance(name, difficultyID);
-		self.AddInstance(name, instanceType, difficultyID, isSaved);
+		local saved = self.IsPlayerSavedToInstance(name, difficultyID);
+		self.AddInstance(name, instanceType, difficultyID, saved);
 	end
 
 	self:RegisterEvent('CHAT_MSG_SYSTEM');
@@ -140,19 +140,19 @@ function InstanceCounter.AddCurrentInstance()
 	end
 end
 
-function InstanceCounter.AddInstance(name, type, difficulty, saved)
-	if (self.IsInstanceInList(name, type, difficulty)) then return end
+function InstanceCounter.AddInstance(name, instanceType, difficultyID, saved)
+	if (self.IsInstanceInList(name, instanceType, difficultyID)) then return end
 
 	local instance = {
 		character	= UnitName('player');
-		difficulty	= difficulty;
+		difficultyID= difficultyID;
 		name		= name;
 		reset		= false;
 		saved		= saved;
-		time		= time();
-		last_seen	= time();
-		reset_time	= nil;
-		type		= type;
+		entered		= time();
+		lastSeen	= time();
+		resetTime	= nil;
+		instanceType= instanceType;
 	}
 	
 	table.insert(db.List, instance);
@@ -170,7 +170,7 @@ function InstanceCounter.ClearOldInstances()
 	local removed = false
 	
 	for i = # db.List, 1, -1 do
-		if (t - db.List[i].last_seen > 3600) then
+		if (t - db.List[i].lastSeen > 3600) then
 			table.remove(db.List, i)
 			removed = true
 		end
@@ -184,9 +184,9 @@ function InstanceCounter.ClearOldInstances()
 	return removed
 end
 
-function InstanceCounter.IsInstanceInList(name, type, difficulty)
+function InstanceCounter.IsInstanceInList(name, instanceType, difficultyID)
 	for i = 1, # db.List do
-		if ((name == db.List[i].name) and (type == db.List[i].type) and (difficulty == db.List[i].difficulty) and (UnitName('player') == db.List[i].character)) then
+		if ((name == db.List[i].name) and (instanceType == db.List[i].instanceType) and (difficultyID == db.List[i].difficultyID) and (UnitName('player') == db.List[i].character)) then
 			if (db.List[i].saved) then return true end
 			if (not db.List[i].reset) then return true end
 		end
@@ -195,11 +195,11 @@ function InstanceCounter.IsInstanceInList(name, type, difficulty)
 	return false;
 end
 
-function InstanceCounter.IsPlayerSavedToInstance(name, difficulty)
+function InstanceCounter.IsPlayerSavedToInstance(name, difficultyID)
 	for i = 1, GetNumSavedInstances() do
-		local i_name,_,_, i_difficulty, i_locked = GetSavedInstanceInfo(i);
+		local i_name,_,_, i_difficultyID, i_locked = GetSavedInstanceInfo(i);
 		
-		if ((i_name == name) and (i_difficulty == difficulty) and (i_locked)) then return true end
+		if ((i_name == name) and (i_difficultyID == difficultyID) and (i_locked)) then return true end
 	end
 	
 	return false;
@@ -218,9 +218,9 @@ end
 
 function InstanceCounter.ResetInstancesForCharacter(playername)
 	for i = 1, # db.List do
-		if (db.List[i].type == 'party' and db.List[i].character == playername) then
+		if (db.List[i].instanceType == 'party' and db.List[i].character == playername) then
 			if not db.List[i].reset then				
-				db.List[i].reset_time = time();
+				db.List[i].resetTime = time();
 				db.List[i].reset = true;
 			end
 		end
@@ -232,7 +232,7 @@ function InstanceCounter.ResetInstanceByName(instance)
 		if (db.List[i].name == instance) then
 			if not db.List[i].reset then			
 				db.List[i].reset = true;	
-				db.List[i].reset_time = time();
+				db.List[i].resetTime = time();
 			end
 		end
 	end
@@ -247,7 +247,7 @@ end
 
 
 function InstanceCounter.SortInstances()
-	table.sort(db.List, function(a, b) return a.time < b.time end);
+	table.sort(db.List, function(a, b) return a.entered < b.entered end);
 end
 
 function InstanceCounter.TimeRemaining(t)
@@ -275,7 +275,7 @@ end
 function InstanceCounter.PrintTimeUntilReset()
 	if (# db.List > 0) then
 		if (# db.List >= 5) then
-			print(prefix .. C.YELLOW .. L['TIME_REMAINING'] .. self.TimeRemaining(db.List[1].last_seen));
+			print(prefix .. C.YELLOW .. L['TIME_REMAINING'] .. self.TimeRemaining(db.List[1].lastSeen));
 		else
 			print(prefix .. C.YELLOW .. L['ONLY_ENTERED'] .. C.GREEN .. # db.List .. L['THIS_HOUR']);
 		end
@@ -297,7 +297,7 @@ function InstanceCounter.PrintInstances()
 			else
 				i_color = C.WHITE
 			end
-			print(C.WHITE .. db.List[i].character .. ' ' .. i_color .. db.List[i].name  .. C.WHITE .. ' ' .. self.TimeRemaining(db.List[i].last_seen));
+			print(C.WHITE .. db.List[i].character .. ' ' .. i_color .. db.List[i].name  .. C.WHITE .. ' ' .. self.TimeRemaining(db.List[i].lastSeen));
 		end
 	else
 		print(prefix .. C.YELLOW .. L['NO_INSTANCES']);
@@ -311,7 +311,7 @@ function InstanceCounter.PrintInstancesToChat(chat, channel)
 	if (# db.List > 0) then
 		SendChatMessage(L['LIST_HEADERS'], chat ,"Common", channel);
 		for i = 1, # db.List do
-			SendChatMessage(db.List[i].character .. ' - ' .. db.List[i].name  .. ' - ' .. self.TimeRemaining(db.List[i].last_seen), chat ,"Common", channel);
+			SendChatMessage(db.List[i].character .. ' - ' .. db.List[i].name  .. ' - ' .. self.TimeRemaining(db.List[i].lastSeen), chat ,"Common", channel);
 		end
 	else
 		SendChatMessage(L['NO_INSTANCES'], chat ,"Common", channel);
