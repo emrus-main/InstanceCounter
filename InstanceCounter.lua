@@ -7,6 +7,9 @@ InstanceCounter = CreateFrame('Frame', 'InstanceCounter')
 InstanceCounter:SetScript('OnEvent', function (addon, event, ...) addon[event](addon, ...) end)
 InstanceCounter:SetScript('OnUpdate', function (addon, ...) addon["OnUpdate"](addon, ...) end)
 InstanceCounter:RegisterEvent('ADDON_LOADED')
+InstanceCounter.ADDONNAME = 'InstanceCounter'
+InstanceCounter.ADDONVERSION = GetAddOnMetadata(InstanceCounter.ADDONNAME, 'Version');
+InstanceCounter.ADDONAUTHOR = GetAddOnMetadata(InstanceCounter.ADDONNAME, 'Author');
 
 local self = InstanceCounter;
 local L = InstanceCounterLocals
@@ -20,18 +23,9 @@ local C = {
 local db = {};
 local prefix = C.GREEN .. L['NAME'] .. C.WHITE .. ': '
 
-InstanceCounter.ADDONNAME = 'InstanceCounter'
-InstanceCounter.ADDONVERSION = GetAddOnMetadata(InstanceCounter.ADDONNAME, 'Version');
-InstanceCounter.ADDONAUTHOR = GetAddOnMetadata(InstanceCounter.ADDONNAME, 'Author');
-
-
 local ADDON_MESSAGE_PREFIX = 'INSTANCE_COUNTER'
 local ADDON_MESSAGE_RESET_SPECIFIC = 'INSTANCE RESET\t'
 
-
-------------------------------------------
---			Event Handlers				--
-------------------------------------------
 
 function InstanceCounter:ADDON_LOADED(frame)
 	if (frame ~= InstanceCounter.ADDONNAME) then return end
@@ -52,7 +46,7 @@ function InstanceCounter:ADDON_LOADED(frame)
 	if (InstanceCounterDB.List == nil) then InstanceCounterDB.List = {} end
 	db = InstanceCounterDB;
 	
-	self.CleanInstanceList();	
+	self.RemoveOldInstances();
 	self:RegisterEvent('PLAYER_ENTERING_WORLD');
 	self:RegisterEvent('CHAT_MSG_ADDON');
 	
@@ -67,7 +61,7 @@ function InstanceCounter:ADDON_LOADED(frame)
 end
 
 function InstanceCounter:PLAYER_ENTERING_WORLD()
-	self.CleanInstanceList();
+	self.RemoveOldInstances();
 	
 	local inInstance, instanceType = IsInInstance();
 	if (not inInstance or ((instanceType ~= 'party') and (instanceType ~= 'raid'))) then 
@@ -88,15 +82,18 @@ end
 
 function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 	if (msg == TRANSFER_ABORT_TOO_MANY_INSTANCES) then
+		self.RemoveOldInstances();
 		print(prefix .. C.YELLOW .. L['TIME_REMAINING'] .. self.TimeRemaining(db.List[1].last_seen));
 	end
 	
 	if (msg == ERR_LEFT_GROUP_YOU ) then
+		self.RemoveOldInstances();
 		self.ResetInstancesForCharacter(UnitName('player'))
 	end
 
 	match = string.match(msg, '(.*) has been reset')
 	if (match ~= nil) then
+		self.RemoveOldInstances();
 		self.ResetInstance(match)
 		if (IsInGroup()) then
 			success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_RESET_SPECIFIC .. match, 'PARTY')
@@ -116,6 +113,7 @@ function InstanceCounter:CHAT_MSG_ADDON(prefix, msg, type, sender)
 
 	match, arg = string.match(msg, '(' .. ADDON_MESSAGE_RESET_SPECIFIC .. ')(.+)')
 	if (match ~= nil and arg ~= nil) then
+		self.RemoveOldInstances();
 		self.ResetInstance(arg)
 	end
 end
@@ -146,6 +144,13 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 	self.sinceLastUpdate = (self.sinceLastUpdate or 0) + sinceLastUpdate;
 	if ( self.sinceLastUpdate >= 5 ) then
 		self.sinceLastUpdate = 0;
+
+		if (# db.List >= 5) then
+			self.RemoveOldInstances();					
+			if (# db.List <= 4) then
+				print(prefix .. C.YELLOW .. L['OPEN_INSTANCES']);
+			end
+		end
 		
 		local inInstance, instanceType = IsInInstance();
 		if (not inInstance or ((instanceType ~= 'party') and (instanceType ~= 'raid'))) then 
@@ -170,14 +175,11 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 end
 
 function InstanceCounter.PrintList()
-	-- Clean Instance List
-	self.CleanInstanceList();
+	self.RemoveOldInstances();
 	
-	-- Print Info
 	if (# db.List > 0) then
 		print(prefix .. C.YELLOW .. L['LIST_HEADERS']);
 		for i = 1, # db.List do
-			-- Create locals
 			local i_color;
 						
 			if (db.List[i].reset) then
@@ -185,13 +187,7 @@ function InstanceCounter.PrintList()
 			else
 				i_color = C.WHITE
 			end
-						
-			-- Print Instance Info
-			if (db.List[i].reset_time == nil) then
-				print(C.WHITE .. db.List[i].character .. ' - ' .. i_color .. db.List[i].name  .. C.WHITE .. ' - ' .. self.TimeRemaining(db.List[i].time) .. ' - ' .. self.TimeRemaining(db.List[i].last_seen));
-			else
-				print(C.WHITE .. db.List[i].character .. ' - ' .. i_color .. db.List[i].name  .. C.WHITE .. ' - ' .. self.TimeRemaining(db.List[i].time) .. ' - ' .. self.TimeRemaining(db.List[i].last_seen) .. ' - ' .. C.RED .. self.TimeRemaining(db.List[i].reset_time));
-			end
+			print(C.WHITE .. db.List[i].character .. ' ' .. i_color .. db.List[i].name  .. C.WHITE .. ' ' .. self.TimeRemaining(db.List[i].last_seen));
 		end
 	else
 		print(prefix .. C.YELLOW .. L['NO_INSTANCES']);
@@ -200,10 +196,8 @@ end
 
 
 function InstanceCounter.PrintListChat(chat, channel)
-	-- Clean Instance List
-	self.CleanInstanceList();
+	self.RemoveOldInstances();
 	
-	-- Print Info
 	if (# db.List > 0) then
 		SendChatMessage(L['LIST_HEADERS'], chat ,"Common", channel);
 		for i = 1, # db.List do
@@ -234,8 +228,7 @@ end
 
 function InstanceCounter.AddInstanceToList(name, type, difficulty, saved)
 	if (self.IsAlreadySaved(name, type, difficulty)) then return end
-		
-	-- Compact Instance Info
+
 	local instance = {
 		character	= UnitName('player');
 		difficulty	= difficulty;
@@ -248,10 +241,7 @@ function InstanceCounter.AddInstanceToList(name, type, difficulty, saved)
 		type		= type;
 	}
 	
-	-- Add Instance To List
 	table.insert(db.List, instance);
-	
-	-- Sort Instance List
 	self.SortList();
 end
 
@@ -266,7 +256,7 @@ function InstanceCounter.IsAlreadySaved(name, type, difficulty)
 	return false;
 end
 
-function InstanceCounter.CleanInstanceList()
+function InstanceCounter.RemoveOldInstances()
 	local t = time();
 	
 	for i = # db.List, 1, -1 do
@@ -334,8 +324,14 @@ end
 
 function InstanceCounter.TimeRemaining(t)
 	local t = 3600 - (time() - t);
-	local m = floor(t / 60);
-	return (m .. 'm ' .. (t - (m * 60)) .. 's ');
+	local neg = '';
+
+	if t < 0 then 
+		t = -t
+		neg = '-'
+	end
+
+	return neg .. string.format("%.2d:%.2d", floor(t/60), t%60)
 end
 
 hooksecurefunc('ResetInstances', function(...)

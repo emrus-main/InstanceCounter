@@ -7,12 +7,12 @@ L['CMD_SHORT']		= '/ic';
 
 
 L['NAME']			= 'InstanceCounter'
-L['INSTANCE_LIST']	= 'Instance List.';
-L['LIST_CLEARED']	= 'Instance list cleared.';
-L['LIST_HEADERS']	= 'Character - Instance - Time Remaining';
+L['LIST_CLEARED']	= 'Database cleared.';
+L['LIST_HEADERS']	= 'Character Instance Time Remaining';
 L['MANUAL_RESET']	= 'Manual reset complete.';
-L['NO_INSTANCES']	= 'You have entered no instances this hour.';
+L['NO_INSTANCES']	= 'You have not entered an instance in the last hour.';
 L['ONLY_ENTERED']	= 'You have only entered';
+L['OPEN_INSTANCES']	= 'You can now enter a new instance.';
 L['THIS_HOUR']		= ' instance/s this hour.';
 L['TIME_REMAINING']	= 'Time remaining till you can enter another instance: ';
 L['TOO_MANY_PREFIXES']	= "Error: Could not register addon communication, you won't receive updates from other player";
