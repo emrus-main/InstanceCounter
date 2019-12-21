@@ -231,9 +231,7 @@ function InstanceCounter.ResetInstancesByKey(key, value)
 end
 
 function InstanceCounter.OnResetInstances()
-	if IsInInstance() then return end
-
-	if not IsInGroup() or UnitIsGroupLeader('player') then
+	if not IsInInstance() and (UnitIsGroupLeader('player') or not IsInGroup()) then
 		self.ResetInstancesForParty()
 	end
 end
