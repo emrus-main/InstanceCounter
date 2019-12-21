@@ -93,23 +93,9 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 
 		self.ClearOldAndPrint()
 		
-		if (not IsInInstance()) then return end
-		
-		local name, instanceType, difficultyID = GetInstanceInfo();
-		if ((instanceType ~= "party") and (instanceType ~= "raid")) then return end
-
-		local character = UnitName('player')
-
-		for i = 1, # db.List do
-			if (db.List[i].reset == false and 
-				db.List[i].name == name and 
-				db.List[i].type == instanceType and 
-				db.List[i].difficulty == difficultyID and 
-				db.List[i].character == character) then
-				db.List[i].last_seen = time();
-			end
+		if (IsInInstance()) then
+			self.UpdateTimeInInstance()
 		end
-		
 	end
 end
 
@@ -118,6 +104,23 @@ function InstanceCounter.Broadcast(instanceName)
 	if not success then
 		print(prefix .. C.RED .. L['MESSAGE_NOT_SENT'])
 	end
+end
+
+function InstanceCounter.UpdateTimeInInstance()
+	local name, instanceType, difficultyID = GetInstanceInfo();
+	if ((instanceType ~= "party") and (instanceType ~= "raid")) then return end
+
+	local character = UnitName('player')
+
+	for i = 1, # db.List do
+		if (db.List[i].reset == false and 
+			db.List[i].name == name and 
+			db.List[i].type == instanceType and 
+			db.List[i].difficulty == difficultyID and 
+			db.List[i].character == character) then
+			db.List[i].last_seen = time();
+		end
+	end	
 end
 
 function InstanceCounter.AddCurrentInstance()
