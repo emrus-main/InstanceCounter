@@ -63,12 +63,12 @@ function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 	end
 	
 	if msg == ERR_LEFT_GROUP_YOU then
-		self.ResetInstancesForCharacter(UnitName('player'))
+		self.ResetInstancesByKey('character', UnitName('player'))
 	end
 
 	name = string.match(msg, '(.*) has been reset')
 	if name ~= nil then
-		self.ResetInstanceByName(name)
+		self.ResetInstancesByKey('name', name)
 		if IsInGroup() then
 			self.Broadcast(name)
 		end
@@ -82,7 +82,7 @@ function InstanceCounter:CHAT_MSG_ADDON(prefix, msg, channel, sender)
 
 	name = string.match(msg, ADDON_MESSAGE_RESET_SPECIFIC .. '(.+)')
 	if name ~= nil then
-		self.ResetInstanceByName(name)
+		self.ResetInstancesByKey('name', name)
 	end
 end
 
@@ -92,7 +92,9 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 	if self.sinceLastUpdate >= 5 then
 		self.sinceLastUpdate = 0;
 
-		self.ClearOldAndPrint()
+		if self.ClearOldInstances() and # db.List == 4 then
+			print(prefix .. C.YELLOW .. L['OPEN_INSTANCES']);
+		end
 		
 		if IsInInstance() then
 			self.UpdateTimeInInstance()
@@ -116,7 +118,7 @@ function InstanceCounter.UpdateTimeInInstance()
 	local character = UnitName('player')
 
 	for i = 1, # db.List do
-		if db.List[i].reset == false and 
+		if not db.List[i].reset and 
 			db.List[i].name == name and 
 			db.List[i].instanceType == instanceType and 
 			db.List[i].difficultyID == difficultyID and 
@@ -184,12 +186,14 @@ function InstanceCounter.ClearOldInstances()
 end
 
 function InstanceCounter.IsInstanceInList(name, instanceType, difficultyID)
+	local character = UnitName('player')
+	
 	for i = 1, # db.List do
-		if name == db.List[i].name and 
-		   instanceType == db.List[i].instanceType and 
-		   difficultyID == db.List[i].difficultyID and 
-		   UnitName('player') == db.List[i].character and
-		   (db.List[i].saved or not db.List[i].reset) then
+		if not db.List[i].reset and
+		   db.List[i].name == name and 
+		   db.List[i].instanceType == instanceType and 
+		   db.List[i].difficultyID == difficultyID and 
+		   db.List[i].character == character then
 			return true
 		end
 	end
@@ -201,11 +205,8 @@ function InstanceCounter.IsPlayerSavedToInstance(name, instanceType, difficultyI
 	if instanceType == 'party' and difficultyID == 1 then return false end
 
 	for i = 1, GetNumSavedInstances() do
-		local i_name,_,_, i_difficultyID, i_locked = GetSavedInstanceInfo(i);
-		
-		if i_name == name and 
-		   i_difficultyID == difficultyID and 
-		   i_locked then
+		local i_name, _, _, i_difficultyID, i_locked = GetSavedInstanceInfo(i);		
+		if i_name == name and i_difficultyID == difficultyID and i_locked then
 			return true
 		end
 	end
@@ -214,32 +215,24 @@ function InstanceCounter.IsPlayerSavedToInstance(name, instanceType, difficultyI
 end
 
 function InstanceCounter.ResetInstancesForParty()
-	self.ResetInstancesForCharacter(UnitName('player'))
+	self.ResetInstancesByKey('character', UnitName('player'))
 
+	-- For alts in group --
 	for groupindex = 1,MAX_PARTY_MEMBERS do
 		local playername = UnitName('party' .. groupindex)
 		if playername ~= nil then
-			self.ResetInstancesForCharacter(playername)
+			self.ResetInstancesByKey('character', playername)
 		end
 	end		
 end
 
-function InstanceCounter.ResetInstancesForCharacter(playername)
+function InstanceCounter.ResetInstancesByKey(key, value)
 	for i = 1, # db.List do
-		if db.List[i].instanceType == 'party' and 
-		   db.List[i].character == playername and 
-		   not db.List[i].reset then				
+		if db.List[i][key] == value and 
+		   not db.List[i].reset and
+		   not db.List[i].saved then
 			db.List[i].resetTime = time();
 			db.List[i].reset = true;
-		end
-	end
-end
-
-function InstanceCounter.ResetInstanceByName(instance)
-	for i = 1, # db.List do
-		if db.List[i].name == instance and not db.List[i].reset then			
-			db.List[i].reset = true;	
-			db.List[i].resetTime = time();
 		end
 	end
 end
@@ -272,12 +265,6 @@ end
 
 
 ------ PRINT ------
-
-function InstanceCounter.ClearOldAndPrint()
-	if self.ClearOldInstances() and # db.List == 4 then
-		print(prefix .. C.YELLOW .. L['OPEN_INSTANCES']);
-	end
-end
 
 function InstanceCounter.PrintTimeUntilReset()
 	if # db.List > 0 then
