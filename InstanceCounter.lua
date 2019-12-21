@@ -51,19 +51,9 @@ end
 function InstanceCounter:PLAYER_ENTERING_WORLD()
 	self.ClearOldInstances();
 	
-	if (not IsInInstance()) then return end
-		
-	local name, instanceType, difficultyID = GetInstanceInfo();
-	if ((instanceType ~= "party") and (instanceType ~= "raid")) then return end
-
-	if ((instanceType == 'party') and (difficultyID == 1)) then
-		self.AddInstance(name, instanceType, difficultyID, false);		
-	else
-		local isSaved = self.IsPlayerSavedToInstance(name, difficultyID);
-		self.AddInstance(name, instanceType, difficultyID, isSaved);
-	end
-	
-	self.InstanceCountChanged()
+	if (IsInInstance()) then 
+		self.AddCurrentInstance()
+	end		
 end
 
 function InstanceCounter:CHAT_MSG_SYSTEM(msg)
@@ -82,13 +72,7 @@ function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 		self.ClearOldInstances();
 		self.ResetInstanceByName(instanceName)
 		if (IsInGroup()) then
-			success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_RESET_SPECIFIC .. match, 'PARTY')
-			if not success then
-				print(prefix .. C.RED .. L['MESSAGE_NOT_SENT'])
-			end
-		end
-		if (# db.List >= 5) then
-			self.PrintTimeUntilReset()
+			self.Broadcast(instanceName)
 		end
 	end
 end
@@ -137,6 +121,13 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 	end
 end
 
+function InstanceCounter.Broadcast(instanceName)
+	success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_RESET_SPECIFIC .. instanceName, 'PARTY')
+	if not success then
+		print(prefix .. C.RED .. L['MESSAGE_NOT_SENT'])
+	end
+end
+
 
 function InstanceCounter.InstanceCountChanged()
 	if (# db.List >= 1) then
@@ -147,6 +138,20 @@ function InstanceCounter.InstanceCountChanged()
 	else
 		self:UnregisterEvent('CHAT_MSG_SYSTEM');
 	end
+end
+
+function InstanceCounter.AddCurrentInstance()
+	local name, instanceType, difficultyID = GetInstanceInfo();
+	if ((instanceType ~= "party") and (instanceType ~= "raid")) then return end
+
+	if ((instanceType == 'party') and (difficultyID == 1)) then
+		self.AddInstance(name, instanceType, difficultyID, false);		
+	else
+		local isSaved = self.IsPlayerSavedToInstance(name, difficultyID);
+		self.AddInstance(name, instanceType, difficultyID, isSaved);
+	end
+	
+	self.InstanceCountChanged()
 end
 
 function InstanceCounter.AddInstance(name, type, difficulty, saved)
