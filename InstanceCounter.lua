@@ -1,9 +1,4 @@
-﻿--[[
-	Copyright 2019 Jesper Rasmussen 'Emrus' 
-	All rights reserved
-]]
-
-InstanceCounter = CreateFrame('Frame', 'InstanceCounter')
+﻿InstanceCounter = CreateFrame('Frame', 'InstanceCounter')
 InstanceCounter:SetScript('OnEvent', function (addon, event, ...) addon[event](addon, ...) end)
 InstanceCounter:SetScript('OnUpdate', function (addon, ...) addon["OnUpdate"](addon, ...) end)
 InstanceCounter:RegisterEvent('ADDON_LOADED')
@@ -46,7 +41,7 @@ function InstanceCounter:ADDON_LOADED(frame)
 	if (InstanceCounterDB.List == nil) then InstanceCounterDB.List = {} end
 	db = InstanceCounterDB;
 	
-	self.RemoveOldInstances();
+	self.ClearOldInstances();
 	self:RegisterEvent('PLAYER_ENTERING_WORLD');
 	self:RegisterEvent('CHAT_MSG_ADDON');
 	
@@ -61,7 +56,7 @@ function InstanceCounter:ADDON_LOADED(frame)
 end
 
 function InstanceCounter:PLAYER_ENTERING_WORLD()
-	self.RemoveOldInstances();
+	self.ClearOldInstances();
 	
 	if (not IsInInstance()) then return end
 		
@@ -69,10 +64,10 @@ function InstanceCounter:PLAYER_ENTERING_WORLD()
 	if ((instanceType ~= "party") and (instanceType ~= "raid")) then return end
 
 	if ((instanceType == 'party') and (difficultyID == 1)) then
-		self.AddInstanceToList(name, instanceType, difficultyID, false);		
+		self.AddInstance(name, instanceType, difficultyID, false);		
 	else
-		local isSaved = self.IsInstanceSaved(name, difficultyID);
-		self.AddInstanceToList(name, instanceType, difficultyID, isSaved);
+		local isSaved = self.IsPlayerSavedToInstance(name, difficultyID);
+		self.AddInstance(name, instanceType, difficultyID, isSaved);
 	end
 	
 	self.InstanceCountChanged()
@@ -80,18 +75,18 @@ end
 
 function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 	if (msg == TRANSFER_ABORT_TOO_MANY_INSTANCES) then
-		self.RemoveOldInstances();
+		self.ClearOldInstances();
 		print(prefix .. C.YELLOW .. L['TIME_REMAINING'] .. self.TimeRemaining(db.List[1].last_seen));
 	end
 	
 	if (msg == ERR_LEFT_GROUP_YOU ) then
-		self.RemoveOldInstances();
+		self.ClearOldInstances();
 		self.ResetInstancesForCharacter(UnitName('player'))
 	end
 
 	instanceName = string.match(msg, '(.*) has been reset')
 	if (instanceName ~= nil) then
-		self.RemoveOldInstances();
+		self.ClearOldInstances();
 		self.ResetInstanceByName(instanceName)
 		if (IsInGroup()) then
 			success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_RESET_SPECIFIC .. match, 'PARTY')
@@ -111,32 +106,11 @@ function InstanceCounter:CHAT_MSG_ADDON(prefix, msg, type, sender)
 
 	match, arg = string.match(msg, '(' .. ADDON_MESSAGE_RESET_SPECIFIC .. ')(.+)')
 	if (match ~= nil and arg ~= nil) then
-		self.RemoveOldInstances();
+		self.ClearOldInstances();
 		self.ResetInstanceByName(arg)
 	end
 end
 
-function InstanceCounter.ClearList()
-	db.List = {};
-	print(prefix .. C.YELLOW .. L['LIST_CLEARED']);
-end
-
-function InstanceCounter.PrintTimeUntilReset()
-	if (# db.List > 0) then
-		if (# db.List >= 5) then
-			print(prefix .. C.YELLOW .. L['TIME_REMAINING'] .. self.TimeRemaining(db.List[1].last_seen));
-		else
-			print(prefix .. C.YELLOW .. L['ONLY_ENTERED'] .. C.GREEN .. # db.List .. L['THIS_HOUR']);
-		end
-	else
-		print(prefix .. C.YELLOW .. L['NO_INSTANCES']);
-	end
-end
-
-function InstanceCounter.ManualReset()
-	self.ResetInstancesHelper()
-	print(prefix .. C.YELLOW .. L['MANUAL_RESET']);
-end
 
 function InstanceCounter:OnUpdate(sinceLastUpdate)
 	self.sinceLastUpdate = (self.sinceLastUpdate or 0) + sinceLastUpdate;
@@ -144,7 +118,7 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 		self.sinceLastUpdate = 0;
 
 		if (# db.List >= 5) then
-			self.RemoveOldInstances();					
+			self.ClearOldInstances();					
 			if (# db.List <= 4) then
 				print(prefix .. C.YELLOW .. L['OPEN_INSTANCES']);
 			end
@@ -170,46 +144,6 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 	end
 end
 
-function InstanceCounter.PrintList()
-	self.RemoveOldInstances();
-	
-	if (# db.List > 0) then
-		print(prefix .. C.YELLOW .. L['LIST_HEADERS']);
-		for i = 1, # db.List do
-			local i_color;
-						
-			if (db.List[i].reset) then
-				i_color = C.RED
-			else
-				i_color = C.WHITE
-			end
-			print(C.WHITE .. db.List[i].character .. ' ' .. i_color .. db.List[i].name  .. C.WHITE .. ' ' .. self.TimeRemaining(db.List[i].last_seen));
-		end
-	else
-		print(prefix .. C.YELLOW .. L['NO_INSTANCES']);
-	end
-end
-
-
-function InstanceCounter.PrintListChat(chat, channel)
-	self.RemoveOldInstances();
-	
-	if (# db.List > 0) then
-		SendChatMessage(L['LIST_HEADERS'], chat ,"Common", channel);
-		for i = 1, # db.List do
-			SendChatMessage(db.List[i].character .. ' - ' .. db.List[i].name  .. ' - ' .. self.TimeRemaining(db.List[i].last_seen), chat ,"Common", channel);
-		end
-	else
-		SendChatMessage(L['NO_INSTANCES'], chat ,"Common", channel);
-	end
-end
-
-function InstanceCounter.PrintOptions()
-	print(prefix .. L['CMD_LONG'] .. C.RED .. L['CMD_CMD'] .. C.WHITE .. ' ' .. L['OR']  .. ' ' .. L['CMD_SHORT'] .. C.RED .. L['CMD_CMD']);
-	print(prefix .. C.RED .. L['CMD']['PRINT']['CMD'] .. C.WHITE .. L['CMD']['PRINT']['DESCRIPTION']);
-	print(prefix .. C.RED .. L['CMD']['RESET']['CMD'] .. C.WHITE .. L['CMD']['RESET']['DESCRIPTION']);
-	print(prefix .. C.RED .. L['CMD']['TIME']['CMD'] .. C.WHITE .. L['CMD']['TIME']['DESCRIPTION']);
-end
 
 function InstanceCounter.InstanceCountChanged()
 	if (# db.List >= 1) then
@@ -222,8 +156,8 @@ function InstanceCounter.InstanceCountChanged()
 	end
 end
 
-function InstanceCounter.AddInstanceToList(name, type, difficulty, saved)
-	if (self.IsAlreadySaved(name, type, difficulty)) then return end
+function InstanceCounter.AddInstance(name, type, difficulty, saved)
+	if (self.IsInstanceInList(name, type, difficulty)) then return end
 
 	local instance = {
 		character	= UnitName('player');
@@ -238,10 +172,27 @@ function InstanceCounter.AddInstanceToList(name, type, difficulty, saved)
 	}
 	
 	table.insert(db.List, instance);
-	self.SortList();
+	self.SortInstances();
 end
 
-function InstanceCounter.IsAlreadySaved(name, type, difficulty)
+
+function InstanceCounter.ClearInstances()
+	db.List = {};
+end
+
+function InstanceCounter.ClearOldInstances()
+	local t = time();
+	
+	for i = # db.List, 1, -1 do
+		if (t - db.List[i].last_seen > 3600) then
+			table.remove(db.List, i);
+		end
+	end
+	
+	self.SortInstances();
+end
+
+function InstanceCounter.IsInstanceInList(name, type, difficulty)
 	for i = 1, # db.List do
 		if ((name == db.List[i].name) and (type == db.List[i].type) and (difficulty == db.List[i].difficulty) and (UnitName('player') == db.List[i].character)) then
 			if (db.List[i].saved) then return true end
@@ -252,19 +203,7 @@ function InstanceCounter.IsAlreadySaved(name, type, difficulty)
 	return false;
 end
 
-function InstanceCounter.RemoveOldInstances()
-	local t = time();
-	
-	for i = # db.List, 1, -1 do
-		if (t - db.List[i].last_seen > 3600) then
-			table.remove(db.List, i);
-		end
-	end
-	
-	self.SortList();
-end
-
-function InstanceCounter.IsInstanceSaved(name, difficulty)
+function InstanceCounter.IsPlayerSavedToInstance(name, difficulty)
 	for i = 1, GetNumSavedInstances() do
 		local i_name,_,_, i_difficulty, i_locked = GetSavedInstanceInfo(i);
 		
@@ -274,7 +213,7 @@ function InstanceCounter.IsInstanceSaved(name, difficulty)
 	return false;
 end
 
-function InstanceCounter.ResetInstancesHelper()
+function InstanceCounter.FlagInstancesForReset()
 	self.ResetInstancesForCharacter(UnitName('player'))
 
 	for groupindex = 1,MAX_PARTY_MEMBERS do
@@ -307,14 +246,8 @@ function InstanceCounter.ResetInstanceByName(instance)
 	end
 end
 
-function InstanceCounter.ResetInstances()
-	if (IsInInstance()) then return end
-	if (not IsInGroup() or UnitIsGroupLeader('player')) then
-		self.ResetInstancesHelper()
-	end		
-end
 
-function InstanceCounter.SortList()
+function InstanceCounter.SortInstances()
 	table.sort(db.List, function(a, b) return a.time < b.time end);
 end
 
@@ -330,23 +263,88 @@ function InstanceCounter.TimeRemaining(t)
 	return neg .. string.format("%.2d:%.2d", floor(t/60), t%60)
 end
 
+function InstanceCounter.OnResetInstances()
+	if (IsInInstance()) then return end
+	if (not IsInGroup() or UnitIsGroupLeader('player')) then
+		self.FlagInstancesForReset()
+	end		
+end
+
 hooksecurefunc('ResetInstances', function(...)
-	self.ResetInstances();
+	self.OnResetInstances();
 end)
 
+------ PRINT ------
+
+function InstanceCounter.PrintTimeUntilReset()
+	if (# db.List > 0) then
+		if (# db.List >= 5) then
+			print(prefix .. C.YELLOW .. L['TIME_REMAINING'] .. self.TimeRemaining(db.List[1].last_seen));
+		else
+			print(prefix .. C.YELLOW .. L['ONLY_ENTERED'] .. C.GREEN .. # db.List .. L['THIS_HOUR']);
+		end
+	else
+		print(prefix .. C.YELLOW .. L['NO_INSTANCES']);
+	end
+end
+
+function InstanceCounter.PrintInstances()
+	self.ClearOldInstances();
+	
+	if (# db.List > 0) then
+		print(prefix .. C.YELLOW .. L['LIST_HEADERS']);
+		for i = 1, # db.List do
+			local i_color;
+						
+			if (db.List[i].reset) then
+				i_color = C.RED
+			else
+				i_color = C.WHITE
+			end
+			print(C.WHITE .. db.List[i].character .. ' ' .. i_color .. db.List[i].name  .. C.WHITE .. ' ' .. self.TimeRemaining(db.List[i].last_seen));
+		end
+	else
+		print(prefix .. C.YELLOW .. L['NO_INSTANCES']);
+	end
+end
+
+
+function InstanceCounter.PrintInstancesToChat(chat, channel)
+	self.ClearOldInstances();
+	
+	if (# db.List > 0) then
+		SendChatMessage(L['LIST_HEADERS'], chat ,"Common", channel);
+		for i = 1, # db.List do
+			SendChatMessage(db.List[i].character .. ' - ' .. db.List[i].name  .. ' - ' .. self.TimeRemaining(db.List[i].last_seen), chat ,"Common", channel);
+		end
+	else
+		SendChatMessage(L['NO_INSTANCES'], chat ,"Common", channel);
+	end
+end
+
+function InstanceCounter.PrintOptions()
+	print(prefix .. L['CMD_LONG'] .. C.RED .. L['CMD_CMD'] .. C.WHITE .. ' ' .. L['OR']  .. ' ' .. L['CMD_SHORT'] .. C.RED .. L['CMD_CMD']);
+	print(prefix .. C.RED .. L['CMD']['PRINT']['CMD'] .. C.WHITE .. L['CMD']['PRINT']['DESCRIPTION']);
+	print(prefix .. C.RED .. L['CMD']['RESET']['CMD'] .. C.WHITE .. L['CMD']['RESET']['DESCRIPTION']);
+	print(prefix .. C.RED .. L['CMD']['TIME']['CMD'] .. C.WHITE .. L['CMD']['TIME']['DESCRIPTION']);
+end
+
+------
 
 SlashCmdList['InstanceCounter'] = function(txt)
 	local txt, arg1, arg2 = strsplit(" ", txt, 3)
 	if txt == L['CMD']['CLEAR']['CMD'] then
-		InstanceCounter.ClearList()
+		InstanceCounter.ClearInstances()
+		print(prefix .. C.YELLOW .. L['LIST_CLEARED']);
 	elseif txt == L['CMD']['PRINT']['CMD'] then
-		InstanceCounter.PrintList()
+		InstanceCounter.PrintInstances()
 	elseif txt == L['CMD']['RESET']['CMD'] then
-		InstanceCounter.ManualReset()
+		InstanceCounter.FlagInstancesForReset()
+		print(prefix .. C.YELLOW .. L['MANUAL_RESET']);
 	elseif txt == L['CMD']['TIME']['CMD'] then
 		InstanceCounter.PrintTimeUntilReset()
 	elseif txt == 'chat' then
-		InstanceCounter.PrintListChat(arg1, arg2)
+		InstanceCounter.PrintInstancesToChat(arg1, arg2)
 	else
 		InstanceCounter.PrintOptions()
 	end
