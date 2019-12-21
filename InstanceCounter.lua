@@ -28,15 +28,6 @@ function InstanceCounter:ADDON_LOADED(frame)
 	self:UnregisterEvent('ADDON_LOADED');
 	self.ADDON_LOADED = nil;
 	
-	if (InstanceCounterDB == nil) then 
-		if (InstanceCounter_DB == nil) then 
-			InstanceCounterDB = {} 
-		else
-			InstanceCounterDB = InstanceCounter_DB
-			InstanceCounter_DB = nil
-		end
-	end
-
 	if (InstanceCounterDB == nil) then InstanceCounterDB = {} end
 	if (InstanceCounterDB.List == nil) then InstanceCounterDB.List = {} end
 	db = InstanceCounterDB;
