@@ -129,21 +129,15 @@ end
 function InstanceCounter.AddCurrentInstance()
 	local name, instanceType, difficultyID = GetInstanceInfo();
 	if instanceType ~= "party" and instanceType ~= "raid" then return end
+	
+	self.AddInstance(name, instanceType, difficultyID);
 
-	if instanceType == 'party' and difficultyID == 1 then
-		self.AddInstance(name, instanceType, difficultyID, false);		
-	else
-		local saved = self.IsPlayerSavedToInstance(name, difficultyID);
-		self.AddInstance(name, instanceType, difficultyID, saved);
-	end
-
-	self:RegisterEvent('CHAT_MSG_SYSTEM');
 	if # db.List >= 5 then
 		self.PrintTimeUntilReset()
 	end
 end
 
-function InstanceCounter.AddInstance(name, instanceType, difficultyID, saved)
+function InstanceCounter.AddInstance(name, instanceType, difficultyID)
 	if self.IsInstanceInList(name, instanceType, difficultyID) then return end
 
 	local instance = {
@@ -152,7 +146,7 @@ function InstanceCounter.AddInstance(name, instanceType, difficultyID, saved)
 		difficultyID= difficultyID;
 		character	= UnitName('player');
 		reset		= false;
-		saved		= saved;
+		saved		= self.IsPlayerSavedToInstance(name, instanceType, difficultyID);
 		entered		= time();
 		lastSeen	= time();
 		resetTime	= nil;
@@ -160,6 +154,8 @@ function InstanceCounter.AddInstance(name, instanceType, difficultyID, saved)
 	
 	table.insert(db.List, instance);
 	self.SortInstances();
+
+	self:RegisterEvent('CHAT_MSG_SYSTEM');
 end
 
 
@@ -201,7 +197,9 @@ function InstanceCounter.IsInstanceInList(name, instanceType, difficultyID)
 	return false
 end
 
-function InstanceCounter.IsPlayerSavedToInstance(name, difficultyID)
+function InstanceCounter.IsPlayerSavedToInstance(name, instanceType, difficultyID)
+	if instanceType == 'party' and difficultyID == 1 then return false end
+
 	for i = 1, GetNumSavedInstances() do
 		local i_name,_,_, i_difficultyID, i_locked = GetSavedInstanceInfo(i);
 		
