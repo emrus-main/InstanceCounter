@@ -16,7 +16,6 @@ local C = {
 	WHITE	= '|cffffffff';
 }
 local db = {}
-local prefix = C.GREEN .. L['NAME'] .. C.WHITE .. ': '
 
 local ADDON_MESSAGE_PREFIX = 'INSTANCE_COUNTER'
 local ADDON_MESSAGE_RESET_SPECIFIC = 'INSTANCE RESET\t'
@@ -43,7 +42,7 @@ function InstanceCounter:ADDON_LOADED(frame)
 	
 	successfulRequest = C_ChatInfo.RegisterAddonMessagePrefix(ADDON_MESSAGE_PREFIX)
 	if not successfulRequest then
-		print(prefix .. C.RED .. L['TOO_MANY_PREFIXES'])
+		self.error(L['TOO_MANY_PREFIXES'])
 	end
 end
 
@@ -91,7 +90,7 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 		self.sinceLastUpdate = 0
 
 		if self.ClearOldInstances() and # db.List == 4 then
-			print(prefix .. C.YELLOW .. L['OPEN_INSTANCES'])
+			self.print(L['OPEN_INSTANCES'])
 		end
 		
 		if IsInInstance() then
@@ -103,7 +102,7 @@ end
 function InstanceCounter.Broadcast(name)
 	success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_RESET_SPECIFIC .. name, 'PARTY')
 	if not success then
-		print(prefix .. C.RED .. L['MESSAGE_NOT_SENT'])
+		self.error(L['MESSAGE_NOT_SENT'])
 	end
 end
 
@@ -252,19 +251,19 @@ function InstanceCounter.TimeRemaining(t)
 		neg = '-'
 	end
 
-	return neg .. string.format("%.2d:%.2d", floor(t/60), t%60)
+	return neg .. format("%.2d:%.2d", floor(t/60), t%60)
 end
 
 ------ PRINT ------
 function InstanceCounter.PrintTimeUntilReset()
 	if # db.List > 0 then
 		if # db.List >= 5 then
-			print(prefix .. C.YELLOW .. L['TIME_REMAINING'] .. self.TimeRemaining(db.List[1].lastSeen))
+			self.print(format(L['TIME_REMAINING'], self.TimeRemaining(db.List[1].lastSeen)))
 		else
-			print(prefix .. C.YELLOW .. L['ONLY_ENTERED'] .. C.GREEN .. # db.List .. L['THIS_HOUR'])
+			self.print(format(L['ONLY_ENTERED'], # db.List))
 		end
 	else
-		print(prefix .. C.YELLOW .. L['NO_INSTANCES'])
+		self.print(L['NO_INSTANCES'])
 	end
 end
 
@@ -272,12 +271,16 @@ function InstanceCounter.PrintInstances()
 	self.ClearOldInstances()
 	
 	if # db.List > 0 then
-		print(prefix .. C.YELLOW .. L['LIST_HEADERS'])
+		self.print(L['PRINT_DESCRIPTION'])
+		print(L['PRINT_HEADERS'])
 		for i = 1, # db.List do
-			print(C.WHITE .. db.List[i].character .. ' ' .. (db.List[i].reset and C.RED or C.WHITE) .. db.List[i].name  .. C.WHITE .. ' ' .. self.TimeRemaining(db.List[i].lastSeen))
+			print(C.WHITE .. format(L['PRINT_ROW'], 
+					db.List[i].character, 
+					db.List[i].reset and (C.RED .. db.List[i].name .. C.WHITE) or db.List[i].name, 
+					self.TimeRemaining(db.List[i].lastSeen)))
 		end
 	else
-		print(prefix .. C.YELLOW .. L['NO_INSTANCES'])
+		self.print(L['NO_INSTANCES'])
 	end
 end
 
@@ -285,20 +288,35 @@ function InstanceCounter.PrintInstancesToChat(chat, channel)
 	self.ClearOldInstances()
 	
 	if # db.List > 0 then
-		SendChatMessage(L['LIST_HEADERS'], chat ,"Common", channel)
+		SendChatMessage(L['NAME'] .. ': ' .. L['PRINT_DESCRIPTION'], chat ,"Common", channel)
+		SendChatMessage(L['PRINT_HEADERS'], chat ,"Common", channel)
 		for i = 1, # db.List do
-			SendChatMessage(db.List[i].character .. ' - ' .. db.List[i].name  .. ' - ' .. self.TimeRemaining(db.List[i].lastSeen), chat ,"Common", channel)
+			SendChatMessage(format(L['PRINT_ROW'], db.List[i].character, db.List[i].name, self.TimeRemaining(db.List[i].lastSeen)), chat ,"Common", channel)
 		end
 	else
-		SendChatMessage(L['NO_INSTANCES'], chat ,"Common", channel)
+		self.print(L['NO_INSTANCES'])
 	end
 end
 
 function InstanceCounter.PrintOptions()
-	print(prefix .. L['CMD_LONG'] .. C.RED .. L['CMD_CMD'] .. C.WHITE .. ' ' .. L['OR']  .. ' ' .. L['CMD_SHORT'] .. C.RED .. L['CMD_CMD'])
-	print(prefix .. C.RED .. L['CMD']['PRINT']['CMD'] .. C.WHITE .. L['CMD']['PRINT']['DESCRIPTION'])
-	print(prefix .. C.RED .. L['CMD']['RESET']['CMD'] .. C.WHITE .. L['CMD']['RESET']['DESCRIPTION'])
-	print(prefix .. C.RED .. L['CMD']['TIME']['CMD'] .. C.WHITE .. L['CMD']['TIME']['DESCRIPTION'])
+	local cmd_color = C.RED
+	local cmd_text = C.WHITE
+	
+	self.print(cmd_text .. format(L['CMD_HEADER_DESC'], 
+				L['CMD_LONG'], cmd_color .. L['CMD_CMD'] .. cmd_text,
+				L['CMD_SHORT'], cmd_color .. L['CMD_CMD'] .. cmd_text))
+
+	for k, v in pairs(L['CMD']) do
+		self.print(cmd_text .. format(L['CMD_DESC'], cmd_color .. v['CMD'] .. cmd_text, cmd_color .. v['ARGS'] .. cmd_text, v['DESCRIPTION']))
+	end
+end
+
+function InstanceCounter.print(msg)
+	print(C.GREEN .. L['NAME'] .. ': ' .. C.YELLOW .. msg)
+end
+
+function InstanceCounter.error(msg)
+	print(C.GREEN .. L['NAME'] .. ': ' .. C.RED .. msg)
 end
 
 ------
@@ -311,15 +329,15 @@ SlashCmdList['InstanceCounter'] = function(txt)
 	local txt, arg1, arg2 = strsplit(" ", txt, 3)
 	if txt == L['CMD']['CLEAR']['CMD'] then
 		InstanceCounter.ClearInstances()
-		print(prefix .. C.YELLOW .. L['LIST_CLEARED'])
+		self.print(L['LIST_CLEARED'])
 	elseif txt == L['CMD']['PRINT']['CMD'] then
 		InstanceCounter.PrintInstances()
 	elseif txt == L['CMD']['RESET']['CMD'] then
 		InstanceCounter.ResetInstancesForParty()
-		print(prefix .. C.YELLOW .. L['MANUAL_RESET'])
+		self.print(L['MANUAL_RESET'])
 	elseif txt == L['CMD']['TIME']['CMD'] then
 		InstanceCounter.PrintTimeUntilReset()
-	elseif txt == 'chat' then
+	elseif txt == L['CMD']['REPORT']['CMD'] then
 		InstanceCounter.PrintInstancesToChat(arg1, arg2)
 	else
 		InstanceCounter.PrintOptions()
