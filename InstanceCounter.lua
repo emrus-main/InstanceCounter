@@ -19,6 +19,8 @@ local db = {}
 
 local ADDON_MESSAGE_PREFIX = 'INSTANCE_COUNTER'
 local ADDON_MESSAGE_RESET_SPECIFIC = 'INSTANCE RESET\t'
+local ADDON_MESSAGE_QUERY_RESETS = 'QUERY RESETS'
+local ADDON_MESSAGE_REPLY_QUERY_RESETS = 'QUERY REPLY\t'
 
 function InstanceCounter:ADDON_LOADED(frame)
 	if frame ~= InstanceCounter.ADDONNAME then return end
@@ -29,10 +31,11 @@ function InstanceCounter:ADDON_LOADED(frame)
 	-- Init DB
 	if InstanceCounterDB == nil then InstanceCounterDB = {} end
 	if InstanceCounterDB.List == nil then InstanceCounterDB.List = {} end
+	if InstanceCounterDB.DelayedResetList == nil then InstanceCounterDB.DelayedResetList = {} end
 	db = InstanceCounterDB
 	
 	-- Register Events
-	self.ClearOldInstances()
+	self.ClearOld()
 	self:RegisterEvent('PLAYER_ENTERING_WORLD')
 	self:RegisterEvent('CHAT_MSG_ADDON')
 	
@@ -44,11 +47,18 @@ function InstanceCounter:ADDON_LOADED(frame)
 	if not successfulRequest then
 		self.error(L['TOO_MANY_PREFIXES'])
 	end
+
+	if IsInGroup() then
+		self.Delayed = true
+	end
+
+	self.BroadcastQueryResets()
 end
 
 function InstanceCounter:PLAYER_ENTERING_WORLD()
-	self.ClearOldInstances()
-		
+	if self.Delayed then return end		
+
+	self.ClearOld()
 	if IsInInstance() then 
 		self.AddCurrentInstance()
 	end
@@ -56,7 +66,7 @@ end
 
 function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 	if msg == TRANSFER_ABORT_TOO_MANY_INSTANCES then
-		self.ClearOldInstances()
+		self.ClearOld()
 		self.PrintTimeUntilReset()
 	end
 	
@@ -64,23 +74,34 @@ function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 		self.ResetInstancesByKey('character', UnitName('player'))
 	end
 	
-	name = string.match(msg, '(.*) has been reset')
+	local name = string.match(msg, '(.*) has been reset')
 	if name ~= nil then
 		self.ResetInstancesByKey('name', name)
 		if IsInGroup() then
-			self.Broadcast(name)
-		end
+			self.BroadcastReset(name)
+		end	
 	end
 end
 
 function InstanceCounter:CHAT_MSG_ADDON(prefix, msg, channel, sender)
-	if prefix ~= ADDON_MESSAGE_PREFIX or channel ~= 'PARTY' then
+	if prefix ~= ADDON_MESSAGE_PREFIX or not (channel == 'PARTY' or channel == 'WHISPER') then
 		return
 	end
-	
-	name = string.match(msg, ADDON_MESSAGE_RESET_SPECIFIC .. '(.+)')
-	if name ~= nil then
+
+	if strsplit('-', sender, 2) == UnitName('player') then return end
+
+	local name = string.match(msg, ADDON_MESSAGE_RESET_SPECIFIC .. '(.+)')
+	if channel == 'PARTY' and name ~= nil then
 		self.ResetInstancesByKey('name', name)
+	end
+
+	if channel == 'PARTY' and msg == ADDON_MESSAGE_QUERY_RESETS then
+		self.ReplyToQueryResetRequest(sender)
+	end
+
+	local t = string.match(msg, ADDON_MESSAGE_REPLY_QUERY_RESETS .. '([0-9]+)')
+	if channel == 'WHISPER' and t ~= nil then
+		self.ResetInstancesOlderThen(UnitName('player'), tonumber(t))
 	end
 end
 
@@ -89,7 +110,12 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 	if self.sinceLastUpdate >= 5 then
 		self.sinceLastUpdate = 0
 
-		if self.ClearOldInstances() and # db.List == 4 then
+		if self.Delayed then
+			self.Delayed = false
+			InstanceCounter:PLAYER_ENTERING_WORLD()
+		end
+
+		if self.ClearOld() and # db.List == 4 then
 			self.print(L['OPEN_INSTANCES'])
 		end
 		
@@ -99,8 +125,23 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 	end
 end
 
-function InstanceCounter.Broadcast(name)
+function InstanceCounter.BroadcastReset(name)
 	success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_RESET_SPECIFIC .. name, 'PARTY')
+	if not success then
+		self.error(L['MESSAGE_NOT_SENT'])
+	end
+end
+
+function InstanceCounter.BroadcastQueryResets()
+	print('BroadcastQueryResets')
+	success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_QUERY_RESETS, 'PARTY')
+	if not success then
+		self.error(L['MESSAGE_NOT_SENT'])
+	end
+end
+
+function InstanceCounter.ReplyQueryResets(name, t)
+	success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_REPLY_QUERY_RESETS .. t, 'WHISPER', name)
 	if not success then
 		self.error(L['MESSAGE_NOT_SENT'])
 	end
@@ -111,14 +152,14 @@ function InstanceCounter.UpdateTimeInInstance()
 	if instanceType ~= "party" and instanceType ~= "raid" then return end
 	
 	local character = UnitName('player')
-	
-	for i = 1, # db.List do
-		if not db.List[i].reset and 
-			db.List[i].name == name and 
+
+	for i = # db.List, 1, -1 do
+		if db.List[i].name == name and 
 			db.List[i].instanceType == instanceType and 
 			db.List[i].difficultyID == difficultyID and 
 			db.List[i].character == character then
 			db.List[i].lastSeen = time()
+			return
 		end
 	end
 end
@@ -159,7 +200,7 @@ function InstanceCounter.ClearInstances()
 	self:UnregisterEvent('CHAT_MSG_SYSTEM')
 end
 
-function InstanceCounter.ClearOldInstances()
+function InstanceCounter.ClearOld()
 	local t = time()
 	local removed = false
 	
@@ -167,6 +208,12 @@ function InstanceCounter.ClearOldInstances()
 		if t - db.List[i].lastSeen > 3600 then
 			table.remove(db.List, i)
 			removed = true
+		end
+	end
+
+	for i = # db.DelayedResetList, 1, -1 do
+		if t - db.DelayedResetList[i].resetTime > 3600 then
+			table.remove(db.DelayedResetList, i)
 		end
 	end
 
@@ -209,12 +256,25 @@ end
 
 function InstanceCounter.ResetInstancesForParty()
 	self.ResetInstancesByKey('character', UnitName('player'))
-
+	t = time()
 	-- For alts in group --
-	for groupindex = 1,MAX_PARTY_MEMBERS do
-		local playername = UnitName('party' .. groupindex)
-		if playername ~= nil then
+	for groupindex = 1, GetNumGroupMembers() do
+		local playername, _, _, _, _, _, _, online = GetRaidRosterInfo(groupindex)
+		if playername ~= nil and not online then
 			self.ResetInstancesByKey('character', playername)
+			self.AddToDelayedReset(playername, t)
+		end
+	end
+end
+
+function InstanceCounter.ResetInstancesOlderThen(playername, t)
+	for i = 1, # db.List do
+		if db.List[i].character == playername and 
+		   db.List[i].lastSeen < t and
+		   not db.List[i].reset and 
+		   not db.List[i].saved then
+			db.List[i].resetTime = time()
+			db.List[i].reset = true
 		end
 	end
 end
@@ -238,6 +298,33 @@ end
 
 function InstanceCounter.SortInstances()
 	table.sort(db.List, function(a, b) return a.entered < b.entered end)
+end
+
+function InstanceCounter.AddToDelayedReset(playername, t)
+	for i = # db.DelayedResetList, 1, -1 do
+		if db.DelayedResetList[i].name == playername then
+			db.DelayedResetList[i].resetTime = t
+			return
+		end	
+	end
+
+	local reset = {
+		name		= playername;
+		resetTime	= t;
+	}
+	table.insert(db.DelayedResetList, reset)
+end
+
+function InstanceCounter.ReplyToQueryResetRequest(playerrealmname)
+	local name = strsplit('-', playerrealmname, 2)
+
+	for i = # db.DelayedResetList, 1, -1 do
+		if db.DelayedResetList[i].name == name then
+			InstanceCounter.ReplyQueryResets(playerrealmname, db.DelayedResetList[i].resetTime)
+			table.remove(db.DelayedResetList, i)
+			return
+		end
+	end
 end
 
 function InstanceCounter.TimeRemaining(t)
@@ -266,7 +353,7 @@ function InstanceCounter.PrintTimeUntilReset()
 end
 
 function InstanceCounter.PrintInstances()
-	self.ClearOldInstances()
+	self.ClearOld()
 	
 	if # db.List > 0 then
 		self.print(L['PRINT_DESCRIPTION'])
@@ -283,7 +370,7 @@ function InstanceCounter.PrintInstances()
 end
 
 function InstanceCounter.PrintInstancesToChat(chat, channel)
-	self.ClearOldInstances()
+	self.ClearOld()
 	
 	if # db.List > 0 then
 		SendChatMessage(L['NAME'] .. ': ' .. L['PRINT_DESCRIPTION'], chat ,"Common", channel)
