@@ -50,9 +50,8 @@ function InstanceCounter:ADDON_LOADED(frame)
 
 	if IsInGroup() then
 		self.Delayed = true
+		self.BroadcastQueryResets()
 	end
-
-	self.BroadcastQueryResets()
 end
 
 function InstanceCounter:PLAYER_ENTERING_WORLD()
@@ -133,7 +132,6 @@ function InstanceCounter.BroadcastReset(name)
 end
 
 function InstanceCounter.BroadcastQueryResets()
-	print('BroadcastQueryResets')
 	success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_QUERY_RESETS, 'PARTY')
 	if not success then
 		self.error(L['MESSAGE_NOT_SENT'])
