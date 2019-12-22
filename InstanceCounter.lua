@@ -38,6 +38,10 @@ function InstanceCounter:ADDON_LOADED(frame)
 	self.ClearOld()
 	self:RegisterEvent('PLAYER_ENTERING_WORLD')
 	self:RegisterEvent('CHAT_MSG_ADDON')
+
+	self:RegisterEvent('PLAYER_CAMPING')
+	self:RegisterEvent('PLAYER_LEAVING_WORLD')	
+	
 	
 	if # db.List >= 1 then
 		self:RegisterEvent('CHAT_MSG_SYSTEM')
@@ -55,12 +59,22 @@ function InstanceCounter:ADDON_LOADED(frame)
 end
 
 function InstanceCounter:PLAYER_ENTERING_WORLD()
-	if self.Delayed then return end		
+	self.checkForOfflineReset()
+
+	if self.Delayed then return end
 
 	self.ClearOld()
 	if IsInInstance() then 
 		self.AddCurrentInstance()
 	end
+end
+
+function InstanceCounter:PLAYER_LEAVING_WORLD()
+	db.logoutLocation = self.getDetailedLocation();
+end
+
+function InstanceCounter:PLAYER_CAMPING()
+    db.logoutLocation = self.getDetailedLocation();
 end
 
 function InstanceCounter:CHAT_MSG_SYSTEM(msg)
@@ -144,6 +158,35 @@ function InstanceCounter.ReplyQueryResets(name, t)
 		self.error(L['MESSAGE_NOT_SENT'])
 	end
 end
+
+function InstanceCounter.getDetailedLocation()
+	local name, instanceType, difficultyID = GetInstanceInfo()
+        
+	if instanceType ~= "party" and instanceType ~= "raid" then return nil end
+	
+	return {
+		name = name;
+		instanceType = instanceType;
+		difficultyID = difficultyID;
+		subzone = GetSubZoneText();
+	}
+end
+
+
+function InstanceCounter.checkForOfflineReset()
+	if db.logoutLocation == nil then return end
+
+	local currentLocation = self.getDetailedLocation()
+
+	if currentLocation ~= nil and 
+	   db.logoutLocation.name == currentLocation.name and 
+	   db.logoutLocation.subzone ~= currentLocation.subzone then
+		self.ResetInstancesByKey('character', UnitName('player'))
+		self.print(L['OFFLINE_RESET'])
+	end
+	db.logoutLocation = nil
+end
+
 
 function InstanceCounter.UpdateTimeInInstance()
 	local name, instanceType, difficultyID = GetInstanceInfo()
