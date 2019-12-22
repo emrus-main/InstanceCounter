@@ -42,7 +42,7 @@ function InstanceCounter:ADDON_LOADED(frame)
 	self:RegisterEvent('PLAYER_CAMPING')
 	self:RegisterEvent('PLAYER_LEAVING_WORLD')	
 	
-	
+
 	if # db.List >= 1 then
 		self:RegisterEvent('CHAT_MSG_SYSTEM')
 	end
@@ -97,24 +97,24 @@ function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 end
 
 function InstanceCounter:CHAT_MSG_ADDON(prefix, msg, channel, sender)
-	if prefix ~= ADDON_MESSAGE_PREFIX or not (channel == 'PARTY' or channel == 'WHISPER') then
-		return
-	end
+	if prefix == ADDON_MESSAGE_PREFIX and (channel == 'PARTY' or channel == 'WHISPER') and not UnitIsUnit(sender, "player") then
+		local name = string.match(msg, ADDON_MESSAGE_RESET_SPECIFIC .. '(.+)')
+		if channel == 'PARTY' and name ~= nil then
+			self.ResetInstancesByKey('name', name)
+		end
 
-	if strsplit('-', sender, 2) == UnitName('player') then return end
+		if channel == 'PARTY' and msg == ADDON_MESSAGE_QUERY_RESETS then
+			self.ReplyToQueryResetRequest(sender)
+		end
 
-	local name = string.match(msg, ADDON_MESSAGE_RESET_SPECIFIC .. '(.+)')
-	if channel == 'PARTY' and name ~= nil then
-		self.ResetInstancesByKey('name', name)
-	end
-
-	if channel == 'PARTY' and msg == ADDON_MESSAGE_QUERY_RESETS then
-		self.ReplyToQueryResetRequest(sender)
-	end
-
-	local t = string.match(msg, ADDON_MESSAGE_REPLY_QUERY_RESETS .. '([0-9]+)')
-	if channel == 'WHISPER' and t ~= nil then
-		self.ResetInstancesOlderThen(UnitName('player'), tonumber(t))
+		local t = string.match(msg, ADDON_MESSAGE_REPLY_QUERY_RESETS .. '([0-9]+)')
+		if channel == 'WHISPER' and t ~= nil then
+			self.ResetInstancesOlderThen(UnitName('player'), tonumber(t))
+		end
+	elseif prefix == 'instHistory' and not UnitIsUnit(sender, "player") then
+        if msg == 'GENERATION_ADVANCE' then
+			self.ResetInstancesByKey('character', UnitName('player'))
+        end
 	end
 end
 

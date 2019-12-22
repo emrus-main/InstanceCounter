@@ -1,7 +1,7 @@
 
 ## Interface: 11303
 ## Title: InstanceCounter
-## Version: 1.13.3.1
+## Version: 1.13.3.3
 ## Author: Emrus
 ## Notes: Keeps track of the five instances per hour cap
 ## SavedVariables: InstanceCounterDB
