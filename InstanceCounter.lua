@@ -21,9 +21,13 @@ local ADDON_MESSAGE_PREFIX = 'INSTANCE_COUNTER'
 local ADDON_MESSAGE_RESET_SPECIFIC = 'INSTANCE RESET\t'
 local ADDON_MESSAGE_QUERY_RESETS = 'QUERY RESETS'
 local ADDON_MESSAGE_REPLY_QUERY_RESETS = 'QUERY REPLY\t'
+local print_debug = false
+
+local name, realm, fullName
 
 function InstanceCounter:ADDON_LOADED(frame)
 	if frame ~= InstanceCounter.ADDONNAME then return end
+	self.debug('ADDON_LOADED')
 	
 	self:UnregisterEvent('ADDON_LOADED')
 	self.ADDON_LOADED = nil
@@ -32,6 +36,7 @@ function InstanceCounter:ADDON_LOADED(frame)
 	if InstanceCounterDB == nil then InstanceCounterDB = {} end
 	if InstanceCounterDB.List == nil then InstanceCounterDB.List = {} end
 	if InstanceCounterDB.DelayedResetList == nil then InstanceCounterDB.DelayedResetList = {} end
+	if InstanceCounterDB.PlayerLogoutLocation == nil then InstanceCounterDB.PlayerLogoutLocation = {} end
 	db = InstanceCounterDB
 	
 	-- Register Events
@@ -39,42 +44,39 @@ function InstanceCounter:ADDON_LOADED(frame)
 	self:RegisterEvent('PLAYER_ENTERING_WORLD')
 	self:RegisterEvent('CHAT_MSG_ADDON')
 
-	self:RegisterEvent('PLAYER_CAMPING')
-	self:RegisterEvent('PLAYER_LEAVING_WORLD')	
-	
+	self:RegisterEvent('PLAYER_CAMPING')	
 
 	if # db.List >= 1 then
 		self:RegisterEvent('CHAT_MSG_SYSTEM')
 	end
 	
+
 	successfulRequest = C_ChatInfo.RegisterAddonMessagePrefix(ADDON_MESSAGE_PREFIX)
 	if not successfulRequest then
 		self.error(L['TOO_MANY_PREFIXES'])
 	end
 
-	if IsInGroup() then
-		self.Delayed = true
-		self.BroadcastQueryResets()
-	end
+	self.Delayed = true
 end
 
 function InstanceCounter:PLAYER_ENTERING_WORLD()
+	self.debug('PLAYER_ENTERING_WORLD')
+	name, realm = UnitFullName("player")
+	fullName = name .. "-" .. realm
+
 	self.checkForOfflineReset()
 
 	if self.Delayed then return end
 
 	self.ClearOld()
 	if IsInInstance() then 
-		self.AddCurrentInstance()
+		self.UpdateTimeInInstance()
 	end
 end
 
-function InstanceCounter:PLAYER_LEAVING_WORLD()
-	db.logoutLocation = self.getDetailedLocation();
-end
-
 function InstanceCounter:PLAYER_CAMPING()
-    db.logoutLocation = self.getDetailedLocation();
+	self.debug('PLAYER_CAMPING')
+	db.PlayerLogoutLocation[fullName] = self.getDetailedLocation();
 end
 
 function InstanceCounter:CHAT_MSG_SYSTEM(msg)
@@ -84,12 +86,12 @@ function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 	end
 	
 	if msg == ERR_LEFT_GROUP_YOU then
-		self.ResetInstancesByKey('character', UnitName('player'))
+		self.ResetInstancesByKey('character', fullName)
 	end
 	
 	local name = string.match(msg, '(.*) has been reset')
 	if name ~= nil then
-		self.ResetInstancesByKey('name', name)
+		self.msg('name', name)
 		if IsInGroup() then
 			self.BroadcastReset(name)
 		end	
@@ -109,11 +111,12 @@ function InstanceCounter:CHAT_MSG_ADDON(prefix, msg, channel, sender)
 
 		local t = string.match(msg, ADDON_MESSAGE_REPLY_QUERY_RESETS .. '([0-9]+)')
 		if channel == 'WHISPER' and t ~= nil then
-			self.ResetInstancesOlderThen(UnitName('player'), tonumber(t))
+			self.ResetInstancesOlderThen(fullName, tonumber(t))
 		end
 	elseif prefix == 'instHistory' and not UnitIsUnit(sender, "player") then
         if msg == 'GENERATION_ADVANCE' then
-			self.ResetInstancesByKey('character', UnitName('player'))
+			self.ResetInstancesByKey('character', fullName)
+			self.print(L["INSTANCE_RESET"])
         end
 	end
 end
@@ -124,8 +127,9 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 		self.sinceLastUpdate = 0
 
 		if self.Delayed then
+			self.BroadcastQueryResets()
 			self.Delayed = false
-			InstanceCounter:PLAYER_ENTERING_WORLD()
+			return
 		end
 
 		if self.ClearOld() and # db.List == 4 then
@@ -139,6 +143,7 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 end
 
 function InstanceCounter.BroadcastReset(name)
+	self.debug("BroadcastReset")
 	success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_RESET_SPECIFIC .. name, 'PARTY')
 	if not success then
 		self.error(L['MESSAGE_NOT_SENT'])
@@ -146,6 +151,7 @@ function InstanceCounter.BroadcastReset(name)
 end
 
 function InstanceCounter.BroadcastQueryResets()
+	self.debug("BroadcastQueryResets")
 	success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_QUERY_RESETS, 'PARTY')
 	if not success then
 		self.error(L['MESSAGE_NOT_SENT'])
@@ -153,6 +159,7 @@ function InstanceCounter.BroadcastQueryResets()
 end
 
 function InstanceCounter.ReplyQueryResets(name, t)
+	self.debug("ReplyQueryResets ".. name)
 	success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_REPLY_QUERY_RESETS .. t, 'WHISPER', name)
 	if not success then
 		self.error(L['MESSAGE_NOT_SENT'])
@@ -160,6 +167,7 @@ function InstanceCounter.ReplyQueryResets(name, t)
 end
 
 function InstanceCounter.getDetailedLocation()
+	self.debug("getDetailedLocation")
 	local name, instanceType, difficultyID = GetInstanceInfo()
         
 	if instanceType ~= "party" and instanceType ~= "raid" then return nil end
@@ -174,17 +182,17 @@ end
 
 
 function InstanceCounter.checkForOfflineReset()
-	if db.logoutLocation == nil then return end
+	self.debug("checkForOfflineReset")
+	if db.PlayerLogoutLocation[fullName] == nil then return end
 
 	local currentLocation = self.getDetailedLocation()
-
 	if currentLocation ~= nil and 
-	   db.logoutLocation.name == currentLocation.name and 
-	   db.logoutLocation.subzone ~= currentLocation.subzone then
-		self.ResetInstancesByKey('character', UnitName('player'))
+	   db.PlayerLogoutLocation[fullName].name == currentLocation.name and 
+	   db.PlayerLogoutLocation[fullName].subzone ~= currentLocation.subzone then
+		self.ResetInstancesByKey('character', fullName)
 		self.print(L['OFFLINE_RESET'])
 	end
-	db.logoutLocation = nil
+	db.PlayerLogoutLocation[fullName] = nil
 end
 
 
@@ -192,20 +200,23 @@ function InstanceCounter.UpdateTimeInInstance()
 	local name, instanceType, difficultyID = GetInstanceInfo()
 	if instanceType ~= "party" and instanceType ~= "raid" then return end
 	
-	local character = UnitName('player')
-
 	for i = # db.List, 1, -1 do
 		if db.List[i].name == name and 
 			db.List[i].instanceType == instanceType and 
 			db.List[i].difficultyID == difficultyID and 
-			db.List[i].character == character then
+			db.List[i].character == fullName and
+			not db.List[i].reset then
 			db.List[i].lastSeen = time()
 			return
 		end
 	end
+	if IsInInstance() then 
+		self.AddCurrentInstance()
+	end	
 end
 
 function InstanceCounter.AddCurrentInstance()
+	self.debug("AddCurrentInstance")
 	local name, instanceType, difficultyID = GetInstanceInfo()
 	if instanceType ~= "party" and instanceType ~= "raid" then return end
 	
@@ -217,13 +228,14 @@ function InstanceCounter.AddCurrentInstance()
 end
 
 function InstanceCounter.AddInstance(name, instanceType, difficultyID)
+	self.debug("AddInstance")
 	if self.IsInstanceInList(name, instanceType, difficultyID) then return end
 	
 	local instance = {
 		name		= name;
 		instanceType= instanceType;
 		difficultyID= difficultyID;
-		character	= UnitName('player');
+		character	= fullName;
 		reset		= false;
 		saved		= self.IsPlayerSavedToInstance(name, instanceType, difficultyID);
 		entered		= time();
@@ -237,6 +249,7 @@ function InstanceCounter.AddInstance(name, instanceType, difficultyID)
 end
 
 function InstanceCounter.ClearInstances()
+	self.debug("ClearInstances")
 	db.List = {}
 	self:UnregisterEvent('CHAT_MSG_SYSTEM')
 end
@@ -266,15 +279,13 @@ function InstanceCounter.ClearOld()
 	return removed
 end
 
-function InstanceCounter.IsInstanceInList(name, instanceType, difficultyID)
-	local character = UnitName('player')
-	
+function InstanceCounter.IsInstanceInList(name, instanceType, difficultyID)	
 	for i = 1, # db.List do
 		if not db.List[i].reset and 
 		   db.List[i].name == name and 
 		   db.List[i].instanceType == instanceType and 
 		   db.List[i].difficultyID == difficultyID and 
-		   db.List[i].character == character then
+		   db.List[i].character == fullName then
 			return true
 		end
 	end
@@ -296,12 +307,17 @@ function InstanceCounter.IsPlayerSavedToInstance(name, instanceType, difficultyI
 end
 
 function InstanceCounter.ResetInstancesForParty()
-	self.ResetInstancesByKey('character', UnitName('player'))
+	self.debug("ResetInstancesForParty")
+	self.ResetInstancesByKey('character', fullName)
 	t = time()
 	-- For alts in group --
 	for groupindex = 1, GetNumGroupMembers() do
 		local playername, _, _, _, _, _, _, online = GetRaidRosterInfo(groupindex)
 		if playername ~= nil and not online then
+			if not string.find(playername,'-') then
+				playername = playername .. '-' .. realm
+			end
+
 			self.ResetInstancesByKey('character', playername)
 			self.AddToDelayedReset(playername, t)
 		end
@@ -309,11 +325,13 @@ function InstanceCounter.ResetInstancesForParty()
 end
 
 function InstanceCounter.ResetInstancesOlderThen(playername, t)
+	self.debug("ResetInstancesOlderThen")
 	for i = 1, # db.List do
 		if db.List[i].character == playername and 
 		   db.List[i].lastSeen < t and
 		   not db.List[i].reset and 
 		   not db.List[i].saved then
+			self.print(L["OFFLINE_RESET"])
 			db.List[i].resetTime = time()
 			db.List[i].reset = true
 		end
@@ -321,6 +339,7 @@ function InstanceCounter.ResetInstancesOlderThen(playername, t)
 end
 
 function InstanceCounter.ResetInstancesByKey(key, value)
+	self.debug("ResetInstancesByKey")
 	for i = 1, # db.List do
 		if db.List[i][key] == value and 
 		   not db.List[i].reset and 
@@ -333,7 +352,7 @@ end
 
 function InstanceCounter.OnResetInstances()
 	if not IsInInstance() and (UnitIsGroupLeader('player') or not IsInGroup()) then
-		self.ResetInstancesForParty()
+		--self.ResetInstancesForParty()
 	end
 end
 
@@ -342,6 +361,7 @@ function InstanceCounter.SortInstances()
 end
 
 function InstanceCounter.AddToDelayedReset(playername, t)
+	self.debug("ResetInstancesByKey")
 	for i = # db.DelayedResetList, 1, -1 do
 		if db.DelayedResetList[i].name == playername then
 			db.DelayedResetList[i].resetTime = t
@@ -356,12 +376,11 @@ function InstanceCounter.AddToDelayedReset(playername, t)
 	table.insert(db.DelayedResetList, reset)
 end
 
-function InstanceCounter.ReplyToQueryResetRequest(playerrealmname)
-	local name = strsplit('-', playerrealmname, 2)
-
+function InstanceCounter.ReplyToQueryResetRequest(playername)
+	self.debug("ReplyToQueryResetRequest")
 	for i = # db.DelayedResetList, 1, -1 do
-		if db.DelayedResetList[i].name == name then
-			InstanceCounter.ReplyQueryResets(playerrealmname, db.DelayedResetList[i].resetTime)
+		if db.DelayedResetList[i].name == playername then
+			InstanceCounter.ReplyQueryResets(playername, db.DelayedResetList[i].resetTime)
 			table.remove(db.DelayedResetList, i)
 			return
 		end
@@ -400,8 +419,9 @@ function InstanceCounter.PrintInstances()
 		self.print(L['PRINT_DESCRIPTION'])
 		print(L['PRINT_HEADERS'])
 		for i = 1, # db.List do
+			local name = strsplit('-', db.List[i].character, 2)
 			print(C.WHITE .. format(L['PRINT_ROW'], 
-					db.List[i].character, 
+					name, 
 					db.List[i].reset and (C.RED .. db.List[i].name .. C.WHITE) or db.List[i].name, 
 					self.TimeRemaining(db.List[i].lastSeen)))
 		end
@@ -434,6 +454,12 @@ function InstanceCounter.PrintOptions()
 
 	for k, v in pairs(L['CMD']) do
 		self.print(cmd_text .. format(L['CMD_DESC'], cmd_color .. v['CMD'] .. cmd_text, cmd_color .. v['ARGS'] .. cmd_text, v['DESCRIPTION']))
+	end
+end
+
+function InstanceCounter.debug(msg)
+	if(print_debug) then
+		print(C.RED .. L['NAME'] .. ': ' .. C.YELLOW .. msg)
 	end
 end
 
