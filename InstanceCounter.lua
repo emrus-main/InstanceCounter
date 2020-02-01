@@ -44,7 +44,11 @@ function InstanceCounter:ADDON_LOADED(frame)
 	self:RegisterEvent('PLAYER_ENTERING_WORLD')
 	self:RegisterEvent('CHAT_MSG_ADDON')
 
-	self:RegisterEvent('PLAYER_CAMPING')	
+	self:RegisterEvent('PLAYER_CAMPING')
+
+	self:RegisterEvent('ZONE_CHANGED')
+	self:RegisterEvent('ZONE_CHANGED_INDOORS')
+	self:RegisterEvent('ZONE_CHANGED_NEW_AREA')
 
 	if # db.List >= 1 then
 		self:RegisterEvent('CHAT_MSG_SYSTEM')
@@ -57,14 +61,13 @@ function InstanceCounter:ADDON_LOADED(frame)
 	end
 
 	self.Delayed = true
+	self.Zoned = false
 end
 
 function InstanceCounter:PLAYER_ENTERING_WORLD()
 	self.debug('PLAYER_ENTERING_WORLD')
 	name, realm = UnitFullName("player")
 	fullName = name .. "-" .. realm
-
-	self.checkForOfflineReset()
 
 	if self.Delayed then return end
 
@@ -77,6 +80,26 @@ end
 function InstanceCounter:PLAYER_CAMPING()
 	self.debug('PLAYER_CAMPING')
 	db.PlayerLogoutLocation[fullName] = self.getDetailedLocation();
+end
+
+function InstanceCounter:ZONE_CHANGED()
+	self.debug('ZONE_CHANGED')
+	self.ZonedIn()
+end
+function InstanceCounter:ZONE_CHANGED_INDOORS()
+	self.debug('ZONE_CHANGED_INDOORS')
+	self.ZonedIn()
+end
+function InstanceCounter:ZONE_CHANGED_NEW_AREA()
+	self.debug('ZONE_CHANGED_NEW_AREA')
+	self.ZonedIn()
+end
+
+function InstanceCounter.ZonedIn()
+	if not self.Zoned then
+		self.checkForOfflineReset()
+		self.Zoned = true
+	end
 end
 
 function InstanceCounter:CHAT_MSG_SYSTEM(msg)
@@ -127,8 +150,13 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 		self.sinceLastUpdate = 0
 
 		if self.Delayed then
-			self.BroadcastQueryResets()
+			if IsInGroup() then
+				self.BroadcastQueryResets()
+			end
 			self.Delayed = false
+			return
+		end
+		if not self.Zoned then
 			return
 		end
 
@@ -185,6 +213,7 @@ function InstanceCounter.checkForOfflineReset()
 	self.debug("checkForOfflineReset")
 	if db.PlayerLogoutLocation[fullName] == nil then return end
 
+	self.debug("Logout Location: " .. db.PlayerLogoutLocation[fullName].name .. ' - ' .. db.PlayerLogoutLocation[fullName].subzone)
 	local currentLocation = self.getDetailedLocation()
 	if currentLocation ~= nil and 
 	   db.PlayerLogoutLocation[fullName].name == currentLocation.name and 
