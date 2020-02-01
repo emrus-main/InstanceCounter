@@ -61,11 +61,17 @@ function InstanceCounter:ADDON_LOADED(frame)
 	end
 
 	self.Delayed = true
-	self.Zoned = false
+	self.Zoned = true
 end
 
-function InstanceCounter:PLAYER_ENTERING_WORLD()
+function InstanceCounter:PLAYER_ENTERING_WORLD(isInitialLogin, isReloadingUi)
 	self.debug('PLAYER_ENTERING_WORLD')
+	if isInitialLogin then self.debug("Initial Login") end
+	if isReloadingUi then self.debug("Reload") end
+
+	self.Delayed = isInitialLogin
+	self.Zoned = not isInitialLogin
+
 	name, realm = UnitFullName("player")
 	fullName = name .. "-" .. realm
 
@@ -122,7 +128,7 @@ function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 end
 
 function InstanceCounter:CHAT_MSG_ADDON(prefix, msg, channel, sender)
-	if prefix == ADDON_MESSAGE_PREFIX and (channel == 'PARTY' or channel == 'WHISPER') and not UnitIsUnit(sender, "player") then
+	if prefix == ADDON_MESSAGE_PREFIX and (channel == 'PARTY' or channel == 'WHISPER') and sender ~= fullName then
 		local name = string.match(msg, ADDON_MESSAGE_RESET_SPECIFIC .. '(.+)')
 		if channel == 'PARTY' and name ~= nil then
 			self.ResetInstancesByKey('name', name)
@@ -156,6 +162,10 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 			self.Delayed = false
 			return
 		end
+		if not self.Zoned then
+			InstanceCounter.ZonedIn()
+		end
+
 		if not self.Zoned then
 			return
 		end
@@ -219,6 +229,7 @@ function InstanceCounter.checkForOfflineReset()
 	   db.PlayerLogoutLocation[fullName].name == currentLocation.name and 
 	   db.PlayerLogoutLocation[fullName].subzone ~= currentLocation.subzone then
 		self.ResetInstancesByKey('character', fullName)
+		self.debug('Offline reset from location')
 		self.print(L['OFFLINE_RESET'])
 	end
 	db.PlayerLogoutLocation[fullName] = nil
@@ -361,6 +372,7 @@ function InstanceCounter.ResetInstancesOlderThen(playername, t)
 		   not db.List[i].reset and 
 		   not db.List[i].saved then
 			self.print(L["OFFLINE_RESET"])
+			self.debug('Offline reset from location')
 			db.List[i].resetTime = time()
 			db.List[i].reset = true
 		end
