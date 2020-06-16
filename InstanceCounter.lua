@@ -120,7 +120,6 @@ function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 	
 	local name = string.match(msg, '(.*) has been reset')
 	if name ~= nil then
-		self.msg('name', name)
 		if IsInGroup() then
 			self.BroadcastReset(name)
 		end	
@@ -393,7 +392,7 @@ end
 
 function InstanceCounter.OnResetInstances()
 	if not IsInInstance() and (UnitIsGroupLeader('player') or not IsInGroup()) then
-		--self.ResetInstancesForParty()
+		self.ResetInstancesForParty()
 	end
 end
 
