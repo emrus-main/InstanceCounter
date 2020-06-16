@@ -25,6 +25,18 @@ local print_debug = false
 
 local name, realm, fullName
 
+local currentSavedCountHour, currentSavedCountDay = 0
+local AnnounceCountWhenAboveForHour = 3
+local AnnounceCountWhenAboveForDay = 15
+
+local InstancesPerHour = 5
+local InstancesPerDay = 30
+local LengthOfHour = 3600
+local LengthOfDay = 86400
+local ListCutOffTime = 86400
+local UpdateFrequency = 5
+
+
 function InstanceCounter:ADDON_LOADED(frame)
 	if frame ~= InstanceCounter.ADDONNAME then return end
 	self.debug('ADDON_LOADED')
@@ -151,7 +163,7 @@ end
 
 function InstanceCounter:OnUpdate(sinceLastUpdate)
 	self.sinceLastUpdate = (self.sinceLastUpdate or 0) + sinceLastUpdate
-	if self.sinceLastUpdate >= 5 then
+	if self.sinceLastUpdate >= UpdateFrequency then
 		self.sinceLastUpdate = 0
 
 		if self.Delayed then
@@ -169,9 +181,20 @@ function InstanceCounter:OnUpdate(sinceLastUpdate)
 			return
 		end
 
-		if self.ClearOld() and # db.List == 4 then
-			self.print(L['OPEN_INSTANCES'])
+		self.ClearOld()
+
+		countHour, countDay = InstanceCounter.InstanceCount()
+
+		if countHour < currentSavedCountHour and currentSavedCountHour > SavedCountAnnounceHourLimit then
+			self.print(format(L['OPEN_INSTANCES_DAY'], countHour))
 		end
+		
+		if countHour < currentSavedCountHour and currentSavedCountDay > SavedCountAnnounceDayLimit then
+			self.print(format(L['OPEN_INSTANCES_DAY'], countDay))
+		end
+
+		currentSavedCountHour = countHour
+		currentSavedCountDay = countDay
 		
 		if IsInInstance() then
 			self.UpdateTimeInInstance()
@@ -261,9 +284,16 @@ function InstanceCounter.AddCurrentInstance()
 	
 	self.AddInstance(name, instanceType, difficultyID)
 	
-	if # db.List >= 5 then
+	countHour, countDay = self.InstanceCount()
+
+	if countHour >= AnnounceCountWhenAboveForHour and countDay >= AnnounceCountWhenAboveForDay then
 		self.PrintTimeUntilReset()
+	elseif countHour >= AnnounceCountWhenAboveForHour then
+		self.PrintTimeUntilResetHour()
+	elseif countDay >= AnnounceCountWhenAboveForDay then
+		self.PrintTimeUntilResetDay()
 	end
+	
 end
 
 function InstanceCounter.AddInstance(name, instanceType, difficultyID)
@@ -290,22 +320,25 @@ end
 function InstanceCounter.ClearInstances()
 	self.debug("ClearInstances")
 	db.List = {}
+	currentSavedCountHour = 0
+	currentSavedCountDay = 0
 	self:UnregisterEvent('CHAT_MSG_SYSTEM')
 end
 
-function InstanceCounter.ClearOld()
+function InstanceCounter.ClearOld()  -- DOUBLE CHECK!
 	local t = time()
 	local removed = false
 	
 	for i = # db.List, 1, -1 do
-		if t - db.List[i].lastSeen > 3600 then
+		if t - db.List[i].lastSeen > ListCutOffTime then
+			self.debug(format("Removing instance %s from list due to not being seen in 24 hours", db.List[i].name))
 			table.remove(db.List, i)
 			removed = true
 		end
 	end
 
 	for i = # db.DelayedResetList, 1, -1 do
-		if t - db.DelayedResetList[i].resetTime > 3600 then
+		if t - db.DelayedResetList[i].resetTime > ListCutOffTime then
 			table.remove(db.DelayedResetList, i)
 		end
 	end
@@ -427,8 +460,8 @@ function InstanceCounter.ReplyToQueryResetRequest(playername)
 	end
 end
 
-function InstanceCounter.TimeRemaining(t)
-	local t = 3600 - (time() - t)
+function InstanceCounter.TimeRemaining(t, period)
+	local t = period - (time() - t)
 	local neg = ''
 
 	if t < 0 then 
@@ -436,51 +469,163 @@ function InstanceCounter.TimeRemaining(t)
 		neg = '-'
 	end
 
-	return neg .. format("%.2d:%.2d", floor(t/60), t%60)
+	local sec = t%60
+	local min = floor(t/60)%60
+	local hour = floor(t/3600)
+
+	if hour > 0 then 
+		return neg .. format("%.2d:%.2d:%.2d", hour, min, sec)
+	end
+	return neg .. format("%.2d:%.2d", min, sec)
 end
+
+function InstanceCounter.InstanceCount()
+	local t = time()
+	local hourCount = 0
+	local dayCount = 0
+
+	if # db.List > 0 then
+		for i,v in ipairs(db.List) do
+			if t - v.lastSeen <= LengthOfHour then
+				hourCount = hourCount + 1
+			end
+			if t - v.lastSeen <= LengthOfDay then
+				dayCount = dayCount + 1
+			end
+		end		
+	end
+	return hourCount, dayCount
+end
+
+function InstanceCounter.NextReset(Period)
+	local t = time()
+	local lastSeen = t
+
+	if # db.List > 0 then
+		for i,v in ipairs(db.List) do
+			if (t - v.lastSeen <= Period) and (v.lastSeen < lastSeen) then
+				lastSeen = v.lastSeen
+			end
+		end		
+	end
+	return lastSeen
+end
+
 
 ------ PRINT ------
 function InstanceCounter.PrintTimeUntilReset()
-	if # db.List > 0 then
-		if # db.List >= 5 then
-			self.print(format(L['TIME_REMAINING'], self.TimeRemaining(db.List[1].lastSeen)))
-		else
-			self.print(format(L['ONLY_ENTERED'], # db.List))
-		end
+	self.ClearOld()
+
+	local hourCount, dayCount = self.InstanceCount()
+	if hourCount >= 1 then
+		self.print(format(L['TIME_REMAINING_HOUR'], hourCount, self.TimeRemaining(self.NextReset(LengthOfHour), LengthOfHour)))
 	else
-		self.print(L['NO_INSTANCES'])
+		self.print(L['NO_INSTANCES_HOUR'])
+	end
+	if dayCount >= 1 then
+		self.print(format(L['TIME_REMAINING_DAY'], dayCount, self.TimeRemaining(self.NextReset(LengthOfDay), LengthOfDay)))
+	else
+		self.print(L['NO_INSTANCES_DAY'])
 	end
 end
+
+function InstanceCounter.PrintTimeUntilResetHour()
+	self.ClearOld()
+	
+	local hourCount, dayCount = self.InstanceCount()
+	if hourCount >= 1 then
+		self.print(format(L['TIME_REMAINING_HOUR'], hourCount, self.TimeRemaining(self.NextReset(LengthOfHour), LengthOfHour)))
+	else
+		self.print(L['NO_INSTANCES_HOUR'])
+	end
+end
+
+function InstanceCounter.PrintTimeUntilResetDay()
+	self.ClearOld()
+
+	local hourCount, dayCount = self.InstanceCount()
+	if dayCount >= 1 then
+		self.print(format(L['TIME_REMAINING_DAY'], dayCount, self.TimeRemaining(self.NextReset(LengthOfDay), LengthOfDay)))
+	else
+		self.print(L['NO_INSTANCES_DAY'])
+	end
+end
+
 
 function InstanceCounter.PrintInstances()
 	self.ClearOld()
 	
-	if # db.List > 0 then
-		self.print(L['PRINT_DESCRIPTION'])
+	local hourCount, dayCount = self.InstanceCount()
+	if hourCount >= 1 then
+		self.print(L['PRINT_DESCRIPTION_HOUR'])
 		print(L['PRINT_HEADERS'])
-		for i = 1, # db.List do
-			local name = strsplit('-', db.List[i].character, 2)
-			print(C.WHITE .. format(L['PRINT_ROW'], 
-					name, 
-					db.List[i].reset and (C.RED .. db.List[i].name .. C.WHITE) or db.List[i].name, 
-					self.TimeRemaining(db.List[i].lastSeen)))
-		end
+		
+		self.PrintInstancesHelper(LengthOfHour)
 	else
-		self.print(L['NO_INSTANCES'])
+		self.print(L['NO_INSTANCES_HOUR'])
 	end
 end
+
+function InstanceCounter.PrintInstancesAll()
+	self.ClearOld()
+	
+	local hourCount, dayCount = self.InstanceCount()
+	if dayCount >= 1 then
+		self.print(L['PRINT_DESCRIPTION_DAY'])
+		print(L['PRINT_HEADERS'])
+		
+		self.PrintInstancesHelper(LengthOfDay)
+	else
+		self.print(L['NO_INSTANCES_DAY'])
+	end
+end
+
+function InstanceCounter.PrintInstancesHelper(period)
+	local t = time()
+	for i,v in ipairs(db.List) do
+		if t - v.lastSeen <= period then
+			local name = strsplit('-', v.character, 2)
+			print(C.WHITE .. format(L['PRINT_ROW'], 
+					name, 
+					v.reset and (C.RED .. v.name .. C.WHITE) or v.name, 
+					self.TimeRemaining(v.lastSeen, period)))
+		end
+	end
+end
+
 
 function InstanceCounter.PrintInstancesToChat(chat, channel)
 	self.ClearOld()
 	
-	if # db.List > 0 then
-		SendChatMessage(L['NAME'] .. ': ' .. L['PRINT_DESCRIPTION'], chat ,"Common", channel)
+	local hourCount, dayCount = self.InstanceCount()
+	if hourCount >= 1 then
+		SendChatMessage(L['NAME'] .. ': ' .. L['PRINT_DESCRIPTION_HOUR'], chat ,"Common", channel)
 		SendChatMessage(L['PRINT_HEADERS'], chat ,"Common", channel)
-		for i = 1, # db.List do
-			SendChatMessage(format(L['PRINT_ROW'], db.List[i].character, db.List[i].name, self.TimeRemaining(db.List[i].lastSeen)), chat ,"Common", channel)
-		end
+		self.PrintInstancesToChatHelper(chat, channel, LengthOfHour)
 	else
-		self.print(L['NO_INSTANCES'])
+		self.print(L['NO_INSTANCES_HOUR'])
+	end
+end
+
+function InstanceCounter.PrintInstancesToChatAll(chat, channel)
+	self.ClearOld()
+	
+	local hourCount, dayCount = self.InstanceCount()
+	if dayCount >= 1 then
+		SendChatMessage(L['NAME'] .. ': ' .. L['PRINT_DESCRIPTION_DAY'], chat ,"Common", channel)
+		SendChatMessage(L['PRINT_HEADERS'], chat ,"Common", channel)
+		self.PrintInstancesToChatHelper(chat, channel, LengthOfDay)
+	else
+		self.print(L['NO_INSTANCES_DAY'])
+	end
+end
+
+function InstanceCounter.PrintInstancesToChatHelper(chat, channel, period)
+	local t = time()
+	for i,v in ipairs(db.List) do
+		if t - v.lastSeen <= period then		
+			SendChatMessage(format(L['PRINT_ROW'], v.character, v.name, self.TimeRemaining(v.lastSeen, period)), chat ,"Common", channel)
+		end
 	end
 end
 
@@ -524,6 +669,8 @@ SlashCmdList['InstanceCounter'] = function(txt)
 		self.print(L['LIST_CLEARED'])
 	elseif txt == L['CMD']['PRINT']['CMD'] then
 		InstanceCounter.PrintInstances()
+	elseif txt == L['CMD']['PRINTALL']['CMD'] then
+		InstanceCounter.PrintInstancesAll()
 	elseif txt == L['CMD']['RESET']['CMD'] then
 		InstanceCounter.ResetInstancesForParty()
 		self.print(L['MANUAL_RESET'])
@@ -531,6 +678,8 @@ SlashCmdList['InstanceCounter'] = function(txt)
 		InstanceCounter.PrintTimeUntilReset()
 	elseif txt == L['CMD']['REPORT']['CMD'] then
 		InstanceCounter.PrintInstancesToChat(arg1, arg2)
+	elseif txt == L['CMD']['REPORTALL']['CMD'] then
+		InstanceCounter.PrintInstancesToChatAll(arg1, arg2)
 	else
 		InstanceCounter.PrintOptions()
 	end
