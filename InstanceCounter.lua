@@ -139,13 +139,13 @@ function InstanceCounter:CHAT_MSG_SYSTEM(msg)
 end
 
 function InstanceCounter:CHAT_MSG_ADDON(prefix, msg, channel, sender)
-	if prefix == ADDON_MESSAGE_PREFIX and (channel == 'PARTY' or channel == 'WHISPER') and sender ~= fullName then
+	if prefix == ADDON_MESSAGE_PREFIX and (channel == 'PARTY' or channel == 'RAID' or channel == 'WHISPER') and sender ~= fullName then
 		local name = string.match(msg, ADDON_MESSAGE_RESET_SPECIFIC .. '(.+)')
-		if channel == 'PARTY' and name ~= nil then
+		if (channel == 'PARTY' or channel == 'RAID') and name ~= nil then
 			self.ResetInstancesByKey('name', name)
 		end
 
-		if channel == 'PARTY' and msg == ADDON_MESSAGE_QUERY_RESETS then
+		if (channel == 'PARTY' or channel == 'RAID') and msg == ADDON_MESSAGE_QUERY_RESETS then
 			self.ReplyToQueryResetRequest(sender)
 		end
 
@@ -204,7 +204,11 @@ end
 
 function InstanceCounter.BroadcastReset(name)
 	self.debug("BroadcastReset")
-	success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_RESET_SPECIFIC .. name, 'PARTY')
+	if IsInRaid() then
+		success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_RESET_SPECIFIC .. name, 'RAID')
+	elseif IsInGroup() then
+		success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_RESET_SPECIFIC .. name, 'PARTY')
+	end
 	if not success then
 		self.error(L['MESSAGE_NOT_SENT'])
 	end
@@ -212,7 +216,11 @@ end
 
 function InstanceCounter.BroadcastQueryResets()
 	self.debug("BroadcastQueryResets")
-	success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_QUERY_RESETS, 'PARTY')
+	if IsInRaid() then
+		success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_QUERY_RESETS, 'RAID')
+	elseif IsInGroup() then
+		success = C_ChatInfo.SendAddonMessage(ADDON_MESSAGE_PREFIX, ADDON_MESSAGE_QUERY_RESETS, 'PARTY')
+	end
 	if not success then
 		self.error(L['MESSAGE_NOT_SENT'])
 	end
